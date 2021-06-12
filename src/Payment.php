@@ -187,6 +187,12 @@ class Payment
         $this->invoice->via($driver);
         $this->settings = $this->config['drivers'][$driver];
 
+        // dispatch event
+        $this->dispatchEvent(
+            'driver',
+            $this->driver
+        );
+
         return $this;
     }
 
