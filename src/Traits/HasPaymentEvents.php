@@ -97,6 +97,34 @@ trait HasPaymentEvents
         static::$eventEmitter->removeEventListener('verify', $listener);
     }
 
+ /**
+     * Add change driver event listener.
+     *
+     * @param callable $listener
+     *
+     * @return void
+     */
+    public static function addChangeDriverListener(callable $listener)
+    {
+        static::singletoneEventEmitter();
+
+        static::$eventEmitter->addEventListener('driver', $listener);
+    }
+
+    /**
+     * Remove change driver event listener.
+     *
+     * @param callable|null $listener
+     *
+     * @return void
+     */
+    public static function removeChangeDriverListener(callable $listener = null)
+    {
+        static::singletoneEventEmitter();
+
+        static::$eventEmitter->removeEventListener('driver', $listener);
+    }
+
     /**
      * Dispatch an event.
      *
