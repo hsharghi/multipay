@@ -190,7 +190,7 @@ class Payment
         // dispatch event
         $this->dispatchEvent(
             'driver',
-            $this->getFreshDriverInstance()
+            $this->getDriverInstance()
         );
 
         return $this;
