@@ -165,13 +165,11 @@ class Behpardakht extends Driver
         }
         
         $receipt = $this->createReceipt($data['saleReferenceId']);
-        
         $receipt->detail([
-            "RefId" => Request::input('RefId'),
-            "SaleOrderId" => Request::input('SaleOrderId'),
-            "CardHolderPan" => Request::input('CardHolderPan'),
-            "CardHolderInfo" => Request::input('CardHolderInfo'),
-            "SaleReferenceId" => Request::input('SaleReferenceId'),
+            'traceNo' => Request::input('SaleOrderId'),
+            'referenceNo' => Request::input('SaleReferenceId'),
+            'transactionId' => Request::input('RefId'),
+            'cardNo' => Request::input('CardHolderPan'),
         ]);
 
         return $receipt;
