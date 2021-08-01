@@ -134,7 +134,15 @@ class Behpardakht extends Driver
             throw new InvalidPaymentException($this->translateStatus($settleResponse), $settleResponse);
         }
 
-        return $this->createReceipt($data['saleReferenceId']);
+        $receipt = $this->createReceipt($data['saleReferenceId']);
+        $receipt->detail([
+            'traceNo' => Request::input('SaleOrderId'),
+            'referenceNo' => Request::input('SaleReferenceId'),
+            'transactionId' => Request::input('RefId'),
+            'cardNo' => Request::input('CardHolderPan'),
+        ]);
+
+        return $receipt;
     }
 
     /**
