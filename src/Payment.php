@@ -268,8 +268,12 @@ class Payment
      *
      * @throws InvoiceNotFoundException
      */
-    public function verify($finalizeCallback = null) : ReceiptInterface
+    public function verify(Invoice $invoice = null, $finalizeCallback = null) : ReceiptInterface
     {
+        if ($invoice) { // create new invoice
+            $this->invoice($invoice);
+        }
+
         $this->driverInstance = $this->getDriverInstance();
         $this->validateInvoice();
         $receipt = $this->driverInstance->verify();
