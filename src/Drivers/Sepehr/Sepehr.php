@@ -123,7 +123,15 @@ class Sepehr extends Driver
             if ($return_id != $amount) {
                 throw new InvalidPaymentException('مبلغ واریز با قیمت محصول برابر نیست');
             }
-            return $this->createReceipt(Request::input('rrn'));
+            $receipt = $this->createReceipt(Request::input('rrn'));
+            $receipt->detail([
+                'traceNo' => Request::input('tracenumber'),
+                'referenceNo' => Request::input('rrn'),
+                'transactionId' => Request::input('_transactionId'),
+                'cardNo' => Request::input('cardnumber'),
+            ]);
+
+            return $receipt;
         } else {
             $message = 'تراکنش نا موفق بود در صورت کسر مبلغ از حساب شما حداکثر پس از 72 ساعت مبلغ به حسابتان برمیگردد.';
             throw new InvalidPaymentException($message);
