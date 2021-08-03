@@ -199,7 +199,8 @@ class Asanpardakht extends Driver
             'localInvoiceId' => $this->invoice->getUuid(),
             'amountInRials' => $this->invoice->getAmount(),
             'localDate' => $this->getTime()['content'],
-            'callbackURL' => $this->settings->callbackUrl . "?" . http_build_query(['invoice' => $this->invoice->getUuid()]),
+            'callbackURL' => $this->settings->callbackUrl . (str_contains($this->settings->callbackUrl, '?') ? "&" : "?") 
+                . http_build_query(['invoice' => $this->invoice->getUuid()]),
             'paymentId' => "0",
             'additionalData' => '',
         ]);
