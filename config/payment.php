@@ -218,6 +218,14 @@ return [
             'callbackUrl' => '',
             'description' => 'payment using sepehr(saderat)',
         ],
+        'saderat' => [
+            'apiGetToken' => 'https://sep.shaparak.ir/onlinepg/onlinepg',
+            'apiPaymentUrl' => 'https://sep.shaparak.ir/OnlinePG/OnlinePG',
+            'apiVerificationUrl' => 'https://mabna.shaparak.ir:8081/V1/PeymentApi/Advice',
+            'terminalId' => '',
+            'callbackUrl' => '',
+            'description' => 'payment using saderat(saman)',
+        ],
         'walleta' => [
             'apiPurchaseUrl' => 'https://cpg.walleta.ir/payment/request.json',
             'apiPaymentUrl' => 'https://cpg.walleta.ir/ticket/',
