@@ -167,7 +167,14 @@ class Payping extends Driver
             $this->notVerified($message);
         }
 
-        return $this->createReceipt($refId);
+        $receipt = $this->createReceipt($refId);
+
+        $receipt->detail([
+            "cardNumber" => $body['cardnumber'],
+        ]);
+
+
+        return $receipt;
     }
 
     /**
