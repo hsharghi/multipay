@@ -202,6 +202,14 @@ return [
             'PaymentIdentity' => '',
             'description' => 'payment using sadad',
         ],
+        'saderat' => [
+            'apiGetToken' => 'https://sep.shaparak.ir/onlinepg/onlinepg',
+            'apiPaymentUrl' => 'https://sep.shaparak.ir/OnlinePG/OnlinePG',
+            'apiVerificationUrl' => 'https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/VerifyTransaction',
+            'terminalId' => '',
+            'callbackUrl' => '',
+            'description' => 'payment using saderat(saman)',
+        ],
         'saman' => [
             'apiPurchaseUrl' => 'https://sep.shaparak.ir/Payments/InitPayment.asmx?WSDL',
             'apiPaymentUrl' => 'https://sep.shaparak.ir/payment.aspx',
@@ -217,14 +225,6 @@ return [
             'terminalId' => '',
             'callbackUrl' => '',
             'description' => 'payment using sepehr(saderat)',
-        ],
-        'saderat' => [
-            'apiGetToken' => 'https://sep.shaparak.ir/onlinepg/onlinepg',
-            'apiPaymentUrl' => 'https://sep.shaparak.ir/OnlinePG/OnlinePG',
-            'apiVerificationUrl' => 'https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/VerifyTransaction',
-            'terminalId' => '',
-            'callbackUrl' => '',
-            'description' => 'payment using saderat(saman)',
         ],
         'walleta' => [
             'apiPurchaseUrl' => 'https://cpg.walleta.ir/payment/request.json',
@@ -383,5 +383,6 @@ return [
         'vandar' => \Shetabit\Multipay\Drivers\Vandar\Vandar::class,
         'aqayepardakht' => \Shetabit\Multipay\Drivers\Aqayepardakht\Aqayepardakht::class,
         'azki' => \Shetabit\Multipay\Drivers\Azki\Azki::class,
+        'saderat' => \Shetabit\Multipay\Drivers\Saderat\Saderat::class,
     ]
 ];
