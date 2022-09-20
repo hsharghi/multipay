@@ -132,7 +132,7 @@ class Saderat extends Driver
     {
         $data = array(
             'RefNum' => Request::input('RefNum'),
-            'TerminalNumber' => $this->settings->merchantId,
+            'TerminalNumber' => $this->settings->terminalId,
         );
 
         $response = $this->client->post(
