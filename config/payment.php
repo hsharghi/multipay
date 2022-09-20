@@ -392,5 +392,6 @@ return [
         'aqayepardakht' => \Shetabit\Multipay\Drivers\Aqayepardakht\Aqayepardakht::class,
         'azki' => \Shetabit\Multipay\Drivers\Azki\Azki::class,
         'saderat' => \Shetabit\Multipay\Drivers\Saderat\Saderat::class,
+        'keshavarzi' => \Shetabit\Multipay\Drivers\Keshavarzi\Keshavarzi::class,
     ]
 ];
