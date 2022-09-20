@@ -111,6 +111,14 @@ return [
             'callbackUrl' => 'http://yoursite.com/path/to',
             'description' => 'payment using irankish',
         ],
+        'keshavarzi' => [
+            'apiGetToken' => 'https://sep.shaparak.ir/onlinepg/onlinepg',
+            'apiPaymentUrl' => 'https://sep.shaparak.ir/OnlinePG/OnlinePG',
+            'apiVerificationUrl' => 'https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/VerifyTransaction',
+            'terminalId' => '',
+            'callbackUrl' => '',
+            'description' => 'payment using keshavarzi(saman)',
+        ],
         'nextpay' => [
             'apiPurchaseUrl' => 'https://nextpay.org/nx/gateway/token',
             'apiPaymentUrl' => 'https://nextpay.org/nx/gateway/payment/',
