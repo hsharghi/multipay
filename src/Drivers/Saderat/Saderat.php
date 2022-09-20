@@ -131,34 +131,9 @@ class Saderat extends Driver
      */
     public function verify(): ReceiptInterface
     {
-
-        switch (Request::input('State')) {
-            case 'CanceledByUser':
-                $this->purchaseFailed(1);
-                break;
-            case 'Failed':
-                $this->purchaseFailed(3);
-                break;
-            case 'SessionIsNull':
-                $this->purchaseFailed(4);
-                break;
-            case 'InvalidParameters':
-                $this->purchaseFailed(5);
-                break;
-            case 'MerchantIpAddressIsInvalid':
-                $this->purchaseFailed(8);
-                break;
-            case 'TokenNotFound':
-                $this->purchaseFailed(10);
-                break;
-            case 'TokenRequired':
-                $this->purchaseFailed(11);
-                break;
-            case 'TerminalNotFound':
-                $this->purchaseFailed(12);
-                break;
-            default:
-                break;
+        $status = (int)Request::input('Status');
+        if ($status != 2) {
+            $this->purchaseFailed($status);
         }
 
         $data = array(
@@ -179,15 +154,6 @@ class Saderat extends Driver
 
         $jsonData = $response->getBody()->getContents();
         $responseData = json_decode($jsonData, true);
-
-        info('response', [
-            'request' => $_REQUEST,
-            'state' => Request::input('State'),
-            'status' => $response->getStatusCode(),
-            'data' => $data,
-            'json' => $jsonData,
-            'response' => $responseData
-        ]);
 
         if ($responseData['ResultCode'] != 0) {
             $this->notVerified($responseData['ResultCode']);
