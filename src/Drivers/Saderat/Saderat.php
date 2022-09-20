@@ -83,14 +83,14 @@ class Saderat extends Driver
         $responseStatus = $response->getStatusCode();
 
         if ($responseStatus != 200) { // if something has done in a wrong way
-            $this->purchaseFailed($response->getBody()->getContents());
+            $this->purchaseFailed(0);
         }
 
         $jsonBody = $response->getBody()->getContents();
         $responseData = json_decode($jsonBody, true);
 
         if ($responseData['status'] != 1) {
-            $this->purchaseFailed($responseData);
+            $this->purchaseFailed($responseData['errorCode']);
         }
 
         // set transaction id
@@ -130,33 +130,35 @@ class Saderat extends Driver
     {
         $data = array(
             'RefNum' => Request::input('RefNum'),
-            'merchantId' => $this->settings->merchantId,
+            'TerminalNumber' => $this->settings->merchantId,
         );
 
-        $soap = new \SoapClient(
+        $response = $this->client->post(
             $this->settings->apiVerificationUrl,
             [
-                'encoding' => 'UTF-8',
-                'cache_wsdl' => WSDL_CACHE_NONE,
-                'stream_context' => stream_context_create([
-                    'ssl' => [
-                        'ciphers' => 'DEFAULT:!DH',
-                    ],
-                ]),
+                'json' => $data,
             ]
         );
-        $status = (int)$soap->VerifyTransaction($data['RefNum'], $data['merchantId']);
 
-        if ($status < 0) {
-            $this->notVerified($status);
+        if ($response->getStatusCode() != 200) {
+            $this->notVerified(0);
         }
+
+        $jsonData = $response->getBody()->getContents();
+        $responseData = json_decode($jsonData, true);
+
+        if ($responseData['ResultCode'] != 0) {
+            $this->notVerified($responseData['ResultCode']);
+        }
+
+        $transactionDetail = $responseData['TransactionDetail'];
 
         $receipt = $this->createReceipt($data['RefNum']);
         $receipt->detail([
-            'traceNo' => Request::input('TraceNo'),
-            'referenceNo' => Request::input('RRN'),
-            'transactionId' => Request::input('RefNum'),
-            'cardNo' => Request::input('SecurePan'),
+            'traceNo' => $transactionDetail['StraceNo'],
+            'referenceNo' => $transactionDetail['RRN'],
+            'transactionId' => $transactionDetail['RefNum'],
+            'cardNo' => $transactionDetail['MaskedPan'],
         ]);
 
         return $receipt;
@@ -186,23 +188,16 @@ class Saderat extends Driver
     protected function purchaseFailed($status)
     {
         $translations = array(
-            -1 => ' تراکنش توسط خریدار کنسل شده است.',
-            -6 => 'سند قبال برگشت کامل یافته است. یا خارج از زمان 30 دقیقه ارسال شده است.',
-            -18 => 'IP Address فروشنده نا‌معتبر است.',
-            79 => 'مبلغ سند برگشتی، از مبلغ تراکنش اصلی بیشتر است.',
-            12 => 'درخواست برگشت یک تراکنش رسیده است، در حالی که تراکنش اصلی پیدا نمی شود.',
-            14 => 'شماره کارت نامعتبر است.',
-            15 => 'چنین صادر کننده کارتی وجود ندارد.',
-            33 => 'از تاریخ انقضای کارت گذشته است و کارت دیگر معتبر نیست.',
-            38 => 'رمز کارت 3 مرتبه اشتباه وارد شده است در نتیجه کارت غیر فعال خواهد شد.',
-            55 => 'خریدار رمز کارت را اشتباه وارد کرده است.',
-            61 => 'مبلغ بیش از سقف برداشت می باشد.',
-            93 => 'تراکنش Authorize شده است (شماره PIN و PAN درست هستند) ولی امکان سند خوردن وجود ندارد.',
-            68 => 'تراکنش در شبکه بانکی Timeout خورده است.',
-            34 => 'خریدار یا فیلد CVV2 و یا فیلد ExpDate را اشتباه وارد کرده است (یا اصال وارد نکرده است).',
-            51 => 'موجودی حساب خریدار، کافی نیست.',
-            84 => 'سیستم بانک صادر کننده کارت خریدار، در وضعیت عملیاتی نیست.',
-            96 => 'کلیه خطاهای دیگر بانکی باعث ایجاد چنین خطایی می گردد.',
+            1 => ' تراکنش توسط خریدار کنسل شده است.',
+            2 => 'پرداخت با موفقیت انجام شد.',
+            3 => 'پرداخت انجام نشد.',
+            4 => 'کاربر در بازه زمانی تعیین شده پاسخی ارسال￼￼ نکرده است.',
+            5 => 'پارامترهای ارسالی نامعتبر است.',
+            8 => 'آدرس سرور پذیرنده نامعتبر است.',
+            9 => 'رمز کارت 3 مرتبه اشتباه وارد شده است در نتیجه کارت غیر فعال خواهد شد.',
+            10 => 'توکن ارسال شده یافت نشد.',
+            11 => 'با این شماره ترمینال فقط تراکنش های توکنی قابل پرداخت هستند.',
+            12 => 'شماره ترمینال ارسال شده یافت نشد.',
         );
 
         if (array_key_exists($status, $translations)) {
@@ -222,22 +217,12 @@ class Saderat extends Driver
     private function notVerified($status)
     {
         $translations = array(
-            -1 => 'خطا در پردازش اطلاعات ارسالی (مشکل در یکی از ورودی ها و ناموفق بودن فراخوانی متد برگشت تراکنش)',
-            -3 => 'ورودیها حاوی کارکترهای غیرمجاز میباشند.',
-            -4 => 'کلمه عبور یا کد فروشنده اشتباه است (Merchant Authentication Failed)',
-            -6 => 'سند قبال برگشت کامل یافته است. یا خارج از زمان 30 دقیقه ارسال شده است.',
-            -7 => 'رسید دیجیتالی تهی است.',
-            -8 => 'طول ورودیها بیشتر از حد مجاز است.',
-            -9 => 'وجود کارکترهای غیرمجاز در مبلغ برگشتی.',
-            -10 => 'رسید دیجیتالی به صورت Base64 نیست (حاوی کاراکترهای غیرمجاز است)',
-            -11 => 'طول ورودیها ک تر از حد مجاز است.',
-            -12 => 'مبلغ برگشتی منفی است.',
-            -13 => 'مبلغ برگشتی برای برگشت جزئی بیش از مبلغ برگشت نخوردهی رسید دیجیتالی است.',
-            -14 => 'چنین تراکنشی تعریف نشده است.',
-            -15 => 'مبلغ برگشتی به صورت اعشاری داده شده است.',
-            -16 => 'خطای داخلی سیستم',
-            -17 => 'برگشت زدن جزیی تراکنش مجاز نمی باشد.',
-            -18 => 'IP Address فروشنده نا معتبر است و یا رمز تابع بازگشتی (reverseTransaction) اشتباه است.',
+            -2 => ' تراکنش یافت نشد.',
+            -6 => 'بیش از نیم ساعت از زمان اجرای تراکنش گذشته است.',
+            2 => 'کاربر در بازه زمانی تعیین شده پاسخی ارسال￼￼ نکرده است.',
+            -104 => 'پارامترهای ارسالی نامعتبر است.',
+            -105 => 'آدرس سرور پذیرنده نامعتبر است.',
+            -106 => 'رمز کارت 3 مرتبه اشتباه وارد شده است در نتیجه کارت غیر فعال خواهد شد.',
         );
 
         if (array_key_exists($status, $translations)) {
