@@ -221,7 +221,7 @@ return [
         'saderat' => [
             'apiGetToken' => 'https://sep.shaparak.ir/onlinepg/onlinepg',
             'apiPaymentUrl' => 'https://sep.shaparak.ir/OnlinePG/OnlinePG',
-            'apiVerificationUrl' => 'https://mabna.shaparak.ir:8081/V1/PeymentApi/Advice',
+            'apiVerificationUrl' => 'https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/VerifyTransaction',
             'terminalId' => '',
             'callbackUrl' => '',
             'description' => 'payment using saderat(saman)',
