@@ -67,13 +67,12 @@ class Saderat extends Driver
             'Amount' => $this->invoice->getAmount() * 10, // convert to rial
             'ResNum' => $this->invoice->getUuid(),
             'RedirectUrl' => $this->settings->callbackUrl,
-            'CellNumber' => '',
+            'CellNumber' => $this->invoice->getDetail('mobile') ?? '',
+            'ResNum1' => $this->invoice->getDetail('ResNum1') ?? '',
+            'ResNum2' => $this->invoice->getDetail('ResNum2') ?? '',
+            'ResNum3' => $this->invoice->getDetail('ResNum3') ?? '',
+            'ResNum4' => $this->invoice->getDetail('ResNum4') ?? '',
         );
-
-        //set CellNumber for get user cards
-        if (!empty($this->invoice->getDetails()['mobile'])) {
-            $data['CellNumber'] = $this->invoice->getDetails()['mobile'];
-        }
 
         $response = $this->client->post(
             $this->settings->apiGetToken,
