@@ -54,7 +54,7 @@ class Aqayepardakht extends Driver
     {
         $data = [
             'pin' => $this->settings->mode === "normal" ? $this->settings->pin : "sandbox",
-            'amount' => $this->invoice->getAmount(),
+            'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10), // convert to toman
             'callback' => $this->settings->callbackUrl,
             'invoice_id' => $this->settings->invoice_id,
             'mobile' => $this->settings->mobile,
@@ -111,7 +111,7 @@ class Aqayepardakht extends Driver
         }
         $data = [
             'pin' => $this->settings->pin,
-            'amount' => $this->invoice->getAmount(),
+            'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10), // convert to toman
             'transid' => $transid
         ];
         $response = $this->client
@@ -134,7 +134,7 @@ class Aqayepardakht extends Driver
                 $message = $this->getErrorMessage($responseBody["code"]);
             }
 
-            $this->notVerified($message ?? '');
+            $this->notVerified($message ?? '', $responseBody["code"]);
         }
         return $this->createReceipt($tracking_number);
     }
@@ -157,12 +157,12 @@ class Aqayepardakht extends Driver
      * @param $message
      * @throws \Shetabit\Multipay\Exceptions\InvalidPaymentException
      */
-    protected function notVerified($message)
+    protected function notVerified($message, $status = 0)
     {
         if (empty($message)) {
-            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.');
+            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.', (int)$status);
         } else {
-            throw new InvalidPaymentException($message);
+            throw new InvalidPaymentException($message, (int)$status);
         }
     }
 

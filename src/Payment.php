@@ -5,7 +5,9 @@ namespace Shetabit\Multipay;
 use Shetabit\Multipay\Contracts\DriverInterface;
 use Shetabit\Multipay\Contracts\ReceiptInterface;
 use Shetabit\Multipay\Exceptions\DriverNotFoundException;
+use Shetabit\Multipay\Exceptions\TimeoutException;
 use Shetabit\Multipay\Exceptions\InvoiceNotFoundException;
+use Shetabit\Multipay\Exceptions\PurchaseFailedException;
 use Shetabit\Multipay\Traits\HasPaymentEvents;
 use Shetabit\Multipay\Traits\InteractsWithRedirectionForm;
 
@@ -185,13 +187,7 @@ class Payment
         $this->driver = $driver;
         $this->validateDriver();
         $this->invoice->via($driver);
-        $this->settings = $this->config['drivers'][$driver];
-
-        // dispatch event
-        $this->dispatchEvent(
-            'driver',
-            $this->getDriverInstance()
-        );
+        $this->settings = array_merge($this->loadDefaultConfig()['drivers'][$driver] ?? [], $this->config['drivers'][$driver]);
 
         return $this;
     }
@@ -267,13 +263,11 @@ class Payment
      * @return ReceiptInterface
      *
      * @throws InvoiceNotFoundException
+     * @throws PurchaseFailedException
+     * @throws TimeoutException
      */
-    public function verify(Invoice $invoice = null, $finalizeCallback = null) : ReceiptInterface
+    public function verify($finalizeCallback = null) : ReceiptInterface
     {
-        if ($invoice) { // create new invoice
-            $this->invoice($invoice);
-        }
-
         $this->driverInstance = $this->getDriverInstance();
         $this->validateInvoice();
         $receipt = $this->driverInstance->verify();

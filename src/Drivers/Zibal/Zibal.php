@@ -60,8 +60,7 @@ class Zibal extends Driver
     {
         $details = $this->invoice->getDetails();
 
-        // convert to toman
-        $toman = $this->invoice->getAmount() * 10;
+        $amount = $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
 
         $orderId = crc32($this->invoice->getUuid()).time();
         if (!empty($details['orderId'])) {
@@ -73,7 +72,7 @@ class Zibal extends Driver
         $data = array(
             "merchant"=> $this->settings->merchantId, //required
             "callbackUrl"=> $this->settings->callbackUrl, //required
-            "amount"=> $toman, //required
+            "amount"=> $amount, //required
             "orderId"=> $orderId, //optional
         );
 
@@ -126,11 +125,12 @@ class Zibal extends Driver
     public function verify() : ReceiptInterface
     {
         $successFlag = Request::input('success');
+        $status = Request::input('status');
         $orderId = Request::input('orderId');
         $transactionId = $this->invoice->getTransactionId() ?? Request::input('trackId');
 
         if ($successFlag != 1) {
-            $this->notVerified('پرداخت با شکست مواجه شد');
+            $this->notVerified($this->translateStatus($status), $status);
         }
 
         //start verfication
@@ -148,7 +148,7 @@ class Zibal extends Driver
         $body = json_decode($response->getBody()->getContents(), false);
 
         if ($body->result != 100) {
-            $this->notVerified($body->message);
+            $this->notVerified($body->message, $body->result);
         }
 
         /*
@@ -156,7 +156,7 @@ class Zibal extends Driver
             var_dump($body);
         */
 
-        return $this->createReceipt($orderId);
+        return $this->createReceipt($body->refNumber);
     }
 
     /**
@@ -173,18 +173,41 @@ class Zibal extends Driver
         return $receipt;
     }
 
+    private function translateStatus($status)
+    {
+        $translations = [
+            -2 => 'خطای داخلی',
+            -1 => 'در انتظار پردخت',
+            2 => 'پرداخت شده - تاییدنشده',
+            3 => 'تراکنش توسط کاربر لغو شد.',
+            4 => 'شماره کارت نامعتبر می‌باشد.',
+            5 => 'موجودی حساب کافی نمی‌باشد.',
+            6 => 'رمز واردشده اشتباه می‌باشد.',
+            7 => 'تعداد درخواست‌ها بیش از حد مجاز می‌باشد.',
+            8 => 'تعداد پرداخت اینترنتی روزانه بیش از حد مجاز می‌باشد.',
+            9 => 'مبلغ پرداخت اینترنتی روزانه بیش از حد مجاز می‌باشد.',
+            10 => 'صادرکننده‌ی کارت نامعتبر می‌باشد.',
+            11 => '‌خطای سوییچ',
+            12 => 'کارت قابل دسترسی نمی‌باشد.'
+        ];
+
+        $unknownError = 'خطای ناشناخته ای رخ داده است.';
+
+        return array_key_exists($status, $translations) ? $translations[$status] : $unknownError;
+    }
+
     /**
      * Trigger an exception
      *
      * @param $message
      * @throws InvalidPaymentException
      */
-    private function notVerified($message)
+    private function notVerified($message, $code = 0)
     {
         if (empty($message)) {
-            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.');
+            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.', $code);
         } else {
-            throw new InvalidPaymentException($message);
+            throw new InvalidPaymentException($message, $code);
         }
     }
 

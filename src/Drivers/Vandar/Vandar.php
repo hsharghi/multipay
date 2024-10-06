@@ -70,7 +70,7 @@ class Vandar extends Driver
 
         $data = [
             'api_key' => $this->settings->merchantId,
-            'amount' => $this->invoice->getAmount(),
+            'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10), // convert to toman
             'callback_url' => $this->settings->callbackUrl,
             'description' => $description,
             'mobile_number' => $mobile,
@@ -160,7 +160,7 @@ class Vandar extends Driver
                 $message = array_pop($responseBody['errors']);
             }
 
-            $this->notVerified($message ?? '');
+            $this->notVerified($message ?? '', $statusCode);
         }
 
         $receipt = $this->createReceipt($token);
@@ -193,12 +193,12 @@ class Vandar extends Driver
      * @param $message
      * @throws \Shetabit\Multipay\Exceptions\InvalidPaymentException
      */
-    protected function notVerified($message)
+    protected function notVerified($message, $status = 0)
     {
         if (empty($message)) {
-            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.');
+            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.', (int)$status);
         } else {
-            throw new InvalidPaymentException($message);
+            throw new InvalidPaymentException($message, (int)$status);
         }
     }
 }

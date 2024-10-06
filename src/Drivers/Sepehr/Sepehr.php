@@ -2,7 +2,6 @@
 
 namespace Shetabit\Multipay\Drivers\Sepehr;
 
-use Illuminate\Support\Facades\Log;
 use Shetabit\Multipay\Abstracts\Driver;
 use Shetabit\Multipay\Exceptions\InvalidPaymentException;
 use Shetabit\Multipay\Exceptions\PurchaseFailedException;
@@ -14,7 +13,6 @@ use Shetabit\Multipay\Request;
 
 class Sepehr extends Driver
 {
-
     /**
      * Invoice
      *
@@ -51,7 +49,7 @@ class Sepehr extends Driver
      */
     public function purchase()
     {
-        $amount = $this->invoice->getAmount() * 10; // convert to rial
+        $amount = $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
 
         $mobile = '';
         //set CellNumber for get user cards
@@ -105,11 +103,11 @@ class Sepehr extends Driver
      */
     public function verify(): ReceiptInterface
     {
-        $resp_code = Request::input('respcode');
-        $amount = $this->invoice->getAmount() * 10; // convert to rial
+        $responseCode = Request::input('respcode');
+        $amount = $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
 
-        if ($resp_code != 0) {
-            $this->notVerified($resp_code);
+        if ($responseCode != 0) {
+            $this->notVerified($responseCode);
         }
 
         $data_query = 'digitalreceipt=' . Request::input('digitalreceipt') . '&Tid=' . $this->settings->terminalId;
@@ -123,15 +121,7 @@ class Sepehr extends Driver
             if ($return_id != $amount) {
                 throw new InvalidPaymentException('مبلغ واریز با قیمت محصول برابر نیست');
             }
-            $receipt = $this->createReceipt(Request::input('rrn'));
-            $receipt->detail([
-                'traceNo' => Request::input('tracenumber'),
-                'referenceNo' => Request::input('rrn'),
-                'transactionId' => Request::input('_transactionId'),
-                'cardNo' => Request::input('cardnumber'),
-            ]);
-
-            return $receipt;
+            return $this->createReceipt(Request::input('rrn'));
         } else {
             $message = 'تراکنش نا موفق بود در صورت کسر مبلغ از حساب شما حداکثر پس از 72 ساعت مبلغ به حسابتان برمیگردد.';
             throw new InvalidPaymentException($message);
@@ -196,9 +186,9 @@ class Sepehr extends Driver
         );
 
         if (array_key_exists($status, $translations)) {
-            throw new InvalidPaymentException($translations[$status]);
+            throw new InvalidPaymentException($translations[$status], (int)$status);
         } else {
-            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.');
+            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.', (int)$status);
         }
     }
 

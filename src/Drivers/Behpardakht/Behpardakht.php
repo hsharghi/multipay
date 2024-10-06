@@ -11,6 +11,7 @@ use Shetabit\Multipay\Receipt;
 use Shetabit\Multipay\Request;
 use Carbon\Carbon;
 use Shetabit\Multipay\RedirectionForm;
+use SoapClient;
 
 class Behpardakht extends Driver
 {
@@ -52,23 +53,15 @@ class Behpardakht extends Driver
 
     public function purchase()
     {
-        if (isset($_SERVER['SERVER_PROTOCOL']) && $_SERVER['SERVER_PROTOCOL'] == "HTTP/2.0") {
-            $context = stream_context_create(
-                [
-                'ssl' => array(
-                  'verify_peer'       => false,
-                  'verify_peer_name'  => false
-                )]
-            );
+        $soap = $this->client($this->settings->apiPurchaseUrl);
 
-            $soap = new \SoapClient($this->settings->apiPurchaseUrl, [
-                'stream_context' => $context
-            ]);
+        $purchaseData = $this->preparePurchaseData();
+
+        if ($this->settings->cumulativeDynamicPayStatus) {
+            $response = $soap->bpCumulativeDynamicPayRequest($purchaseData);
         } else {
-            $soap = new \SoapClient($this->settings->apiPurchaseUrl);
+            $response = $soap->bpPayRequest($purchaseData);
         }
-
-        $response = $soap->bpPayRequest($this->preparePurchaseData());
 
         // fault has happened in bank gateway
         if ($response->return == 21) {
@@ -84,7 +77,6 @@ class Behpardakht extends Driver
 
         $this->invoice->transactionId($data[1]);
 
-        // return the transaction's id
         return $this->invoice->getTransactionId();
     }
 
@@ -101,9 +93,8 @@ class Behpardakht extends Driver
             'RefId' => $this->invoice->getTransactionId()
         ];
 
-        //set mobileNo for get user cards
         if (!empty($this->invoice->getDetails()['mobile'])) {
-            $data['mobileNo'] = $this->invoice->getDetails()['mobile'];
+            $data['MobileNo'] = $this->invoice->getDetails()['mobile'];
         }
 
         return $this->redirectWithForm($payUrl, $data, 'POST');
@@ -126,21 +117,7 @@ class Behpardakht extends Driver
 
         $data = $this->prepareVerificationData();
 
-        if (isset($_SERVER['SERVER_PROTOCOL']) && $_SERVER['SERVER_PROTOCOL'] == "HTTP/2.0") {
-            $context = stream_context_create(
-                [
-                'ssl' => array(
-                  'verify_peer'       => false,
-                  'verify_peer_name'  => false
-                )]
-            );
-
-            $soap = new \SoapClient($this->settings->apiPurchaseUrl, [
-                'stream_context' => $context
-            ]);
-        } else {
-            $soap = new \SoapClient($this->settings->apiPurchaseUrl);
-        }
+        $soap = $this->client($this->settings->apiVerificationUrl);
 
         // step1: verify request
         $verifyResponse = (int)$soap->bpVerifyRequest($data)->return;
@@ -150,6 +127,7 @@ class Behpardakht extends Driver
             if ($verifyResponse != 43) {
                 $soap->bpReversalRequest($data);
             }
+
             throw new InvalidPaymentException($this->translateStatus($verifyResponse), $verifyResponse);
         }
 
@@ -161,15 +139,18 @@ class Behpardakht extends Driver
             if ($settleResponse != 45 && $settleResponse != 48) {
                 $soap->bpReversalRequest($data);
             }
+
             throw new InvalidPaymentException($this->translateStatus($settleResponse), $settleResponse);
         }
 
         $receipt = $this->createReceipt($data['saleReferenceId']);
+
         $receipt->detail([
-            'traceNo' => Request::input('SaleOrderId'),
-            'referenceNo' => Request::input('SaleReferenceId'),
-            'transactionId' => Request::input('RefId'),
-            'cardNo' => Request::input('CardHolderPan'),
+            "RefId" => Request::input('RefId'),
+            "SaleOrderId" => Request::input('SaleOrderId'),
+            "CardHolderPan" => Request::input('CardHolderPan'),
+            "CardHolderInfo" => Request::input('CardHolderInfo'),
+            "SaleReferenceId" => Request::input('SaleReferenceId'),
         ]);
 
         return $receipt;
@@ -228,13 +209,24 @@ class Behpardakht extends Driver
             'userName' => $this->settings->username,
             'userPassword' => $this->settings->password,
             'callBackUrl' => $this->settings->callbackUrl,
-            'amount' => $this->invoice->getAmount() * 10, // convert to rial
+            'amount' => $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1), // convert to rial
             'localDate' => Carbon::now()->format('Ymd'),
             'localTime' => Carbon::now()->format('Gis'),
             'orderId' => crc32($this->invoice->getUuid()),
             'additionalData' => $description,
             'payerId' => $payerId
         );
+    }
+
+    private function client(string $url): SoapClient
+    {
+        if (isset($_SERVER['SERVER_PROTOCOL']) && $_SERVER['SERVER_PROTOCOL'] == "HTTP/2.0") {
+            $context = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+
+            return new SoapClient($url, ['stream_context' => $context]);
+        }
+
+        return new SoapClient($url);
     }
 
     /**
