@@ -2,6 +2,8 @@
 
 namespace Shetabit\Multipay\Drivers\Paypal;
 
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
 use Shetabit\Multipay\Abstracts\Driver;
 use Shetabit\Multipay\Exceptions\InvalidPaymentException;
 use Shetabit\Multipay\Exceptions\PurchaseFailedException;
@@ -13,6 +15,8 @@ use Shetabit\Multipay\Request;
 
 class Paypal extends Driver
 {
+    protected \GuzzleHttp\Client $client;
+
     /**
      * Invoice
      *
@@ -31,13 +35,13 @@ class Paypal extends Driver
      * Paypal constructor.
      * Construct the class with the relevant settings.
      *
-     * @param Invoice $invoice
      * @param $settings
      */
     public function __construct(Invoice $invoice, $settings)
     {
         $this->invoice($invoice);
         $this->settings = (object) $settings;
+        $this->client = new Client();
     }
 
     /**
@@ -46,34 +50,42 @@ class Paypal extends Driver
      * @return string
      *
      * @throws PurchaseFailedException
-     * @throws \SoapFault
+     * @throws GuzzleException
      */
     public function purchase()
     {
-        if (!empty($this->invoice->getDetails()['description'])) {
-            $description = $this->invoice->getDetails()['description'];
-        } else {
-            $description = $this->settings->description;
-        }
+        $params = $this->makeCheckoutParams();
+        $accessToken = $this->getAccessToken();
 
-        $data = array(
-            'MerchantID' => $this->settings->merchantId,
-            'Amount' => $this->invoice->getAmount(),
-            'CallbackURL' => $this->settings->callbackUrl,
-            'Description' => $description,
-            'AdditionalData' => $this->invoice->getDetails()
-        );
+        $response = $this
+            ->client
+            ->request(
+                'POST',
+                $this->getPurchaseUrl(),
+                [
+                    "json" => $params,
+                    "headers" => [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => "Bearer $accessToken",
+                    ],
+                    "http_errors" => false,
+                ]
+            );
+        $result = json_decode($response->getBody()->getContents(), true);
 
-        $client = new \SoapClient($this->getPurchaseUrl(), ['encoding' => 'UTF-8']);
-        $result = $client->PaymentRequest($data);
+        // handle possible errors
+        if ($response->getStatusCode() != 201) {
+            if (isset($result['name']) && isset($result['message'])) {
+                $message = $result['name'] . ': ' . $result['message'];
+            } else {
+                $message = "Unknown error";
+            }
 
-        if ($result->Status != 100 || empty($result->Authority)) {
-            // some error has happened
-            $message = $this->translateStatus($result->Status);
             throw new PurchaseFailedException($message);
         }
 
-        $this->invoice->transactionId($result->Authority);
+
+        $this->invoice->transactionId($result['id']);
 
         // return the transaction's id
         return $this->invoice->getTransactionId();
@@ -81,19 +93,13 @@ class Paypal extends Driver
 
     /**
      * Pay the Invoice
-     *
-     * @return RedirectionForm
      */
     public function pay() : RedirectionForm
     {
         $transactionId = $this->invoice->getTransactionId();
         $paymentUrl = $this->getPaymentUrl();
 
-        if (strtolower($this->getMode()) == 'zaringate') {
-            $payUrl = str_replace(':authority', $transactionId, $paymentUrl);
-        } else {
-            $payUrl = $paymentUrl.$transactionId;
-        }
+        $payUrl = $paymentUrl.$transactionId;
 
         return $this->redirectWithForm($payUrl, [], 'GET');
     }
@@ -101,160 +107,161 @@ class Paypal extends Driver
     /**
      * Verify payment
      *
-     * @return ReceiptInterface
      *
      * @throws InvalidPaymentException
-     * @throws \SoapFault
+     * @throws PurchaseFailedException
      */
     public function verify() : ReceiptInterface
     {
-        $authority = $this->invoice->getTransactionId() ?? Request::input('Authority');
-        $status = Request::input('Status');
+        $transactionId = Request::input('token') ?? $this->invoice->getTransactionId();
 
-        $data = [
-            'MerchantID' => $this->settings->merchantId,
-            'Authority' => $authority,
-            'Amount' => $this->invoice->getAmount(),
-        ];
+        $accessToken = $this->getAccessToken();
+        $verificationUrl = str_replace('{order_id}', $transactionId, $this->getVerificationUrl());
 
-        if ($status != 'OK') {
-            throw new InvalidPaymentException('عملیات پرداخت توسط کاربر لغو شد.');
+        $response = $this
+            ->client
+            ->request(
+                'POST',
+                $verificationUrl,
+                [
+                    "headers" => [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => "Bearer $accessToken",
+                    ],
+                    "http_errors" => false,
+                ]
+            );
+        $result = json_decode($response->getBody()->getContents(), true);
+
+
+        // handle possible errors
+        if (!in_array($response->getStatusCode(), [200, 201])) {
+            if (isset($result['name']) && isset($result['message'])) {
+                $message = $result['name'] . ': ' . $result['message'];
+            } else {
+                $message = "Unknown error";
+            }
+
+            throw new PurchaseFailedException($message);
         }
 
-        $client = new \SoapClient($this->getVerificationUrl(), ['encoding' => 'UTF-8']);
-        $result = $client->PaymentVerification($data);
-
-        if ($result->Status != 100) {
-            $message = $this->translateStatus($result->Status);
-            throw new InvalidPaymentException($message);
+        if (isset($result['status']) && $result['status'] != 'COMPLETED') {
+            throw new PurchaseFailedException("Purchase not completed");
         }
 
-        return $this->createReceipt($result->RefID);
+        // finalize verification
+        return $this->createReceipt($result);
     }
 
     /**
      * Generate the payment's receipt
      *
-     * @param $referenceId
-     *
+     * @param array $result
      * @return Receipt
      */
-    public function createReceipt($referenceId)
+    public function createReceipt(array $result): \Shetabit\Multipay\Receipt
     {
-        return new Receipt('zarinpal', $referenceId);
+        $receipt = new Receipt('paypal', $result['id']);
+        $receipt->detail($result);
+
+        return $receipt;
     }
 
     /**
-     * Convert status to a readable message.
-     *
-     * @param $status
-     *
-     * @return mixed|string
+     * Retrieve access token url
      */
-    private function translateStatus($status)
+    protected function getAccessTokenUrl() : string
     {
-        $translations = array(
-            "-1" => "اطلاعات ارسال شده ناقص است.",
-            "-2" => "IP و يا مرچنت كد پذيرنده صحيح نيست",
-            "-3" => "با توجه به محدوديت هاي شاپرك امكان پرداخت با رقم درخواست شده ميسر نمي باشد",
-            "-4" => "سطح تاييد پذيرنده پايين تر از سطح نقره اي است.",
-            "-11" => "درخواست مورد نظر يافت نشد.",
-            "-12" => "امكان ويرايش درخواست ميسر نمي باشد.",
-            "-21" => "هيچ نوع عمليات مالي براي اين تراكنش يافت نشد",
-            "-22" => "تراكنش نا موفق ميباشد",
-            "-33" => "رقم تراكنش با رقم پرداخت شده مطابقت ندارد",
-            "-34" => "سقف تقسيم تراكنش از لحاظ تعداد يا رقم عبور نموده است",
-            "-40" => "اجازه دسترسي به متد مربوطه وجود ندارد.",
-            "-41" => "اطلاعات ارسال شده مربوط به AdditionalData غيرمعتبر ميباشد.",
-            "-42" => "مدت زمان معتبر طول عمر شناسه پرداخت بايد بين 30 دقيه تا 45 روز مي باشد.",
-            "-54" => "درخواست مورد نظر آرشيو شده است",
-            "101" => "عمليات پرداخت موفق بوده و قبلا PaymentVerification تراكنش انجام شده است.",
-        );
-
-        $unknownError = 'خطای ناشناخته رخ داده است.';
-
-        return array_key_exists($status, $translations) ? $translations[$status] : $unknownError;
+        if ($this->settings->mode == 'sandbox') {
+            return $this->settings->sandboxAccessTokenUrl;
+        } else {
+            return $this->settings->accessTokenUrl;
+        }
     }
 
     /**
      * Retrieve purchase url
-     *
-     * @return string
      */
     protected function getPurchaseUrl() : string
     {
-        $mode = $this->getMode();
-
-        switch ($mode) {
-            case 'sandbox':
-                $url = $this->settings->sandboxApiPurchaseUrl;
-                break;
-            case 'zaringate':
-                $url = $this->settings->zaringateApiPurchaseUrl;
-                break;
-            default: // default: normal
-                $url = $this->settings->apiPurchaseUrl;
-                break;
+        if ($this->settings->mode == 'sandbox') {
+            return $this->settings->sandboxPurchaseUrl;
+        } else {
+            return $this->settings->purchaseUrl;
         }
-
-        return $url;
     }
 
     /**
      * Retrieve Payment url
-     *
-     * @return string
      */
-    protected function getPaymentUrl() : string
+    protected function getPaymentUrl(): string
     {
-        $mode = $this->getMode();
-
-        switch ($mode) {
-            case 'sandbox':
-                $url = $this->settings->sandboxApiPaymentUrl;
-                break;
-            case 'zaringate':
-                $url = $this->settings->zaringateApiPaymentUrl;
-                break;
-            default: // default: normal
-                $url = $this->settings->apiPaymentUrl;
-                break;
+        if ($this->settings->mode == 'sandbox') {
+            return $this->settings->sandboxPaymentUrl;
+        } else {
+            return $this->settings->paymentUrl;
         }
-
-        return $url;
     }
 
     /**
      * Retrieve verification url
-     *
-     * @return string
      */
     protected function getVerificationUrl() : string
     {
-        $mode = $this->getMode();
-
-        switch ($mode) {
-            case 'sandbox':
-                $url = $this->settings->sandboxApiVerificationUrl;
-                break;
-            case 'zaringate':
-                $url = $this->settings->zaringateApiVerificationUrl;
-                break;
-            default: // default: normal
-                $url = $this->settings->apiVerificationUrl;
-                break;
+        if ($this->settings->mode == 'sandbox') {
+            return $this->settings->sandboxVerificationUrl;
+        } else {
+            return $this->settings->verificationUrl;
         }
+    }
 
-        return $url;
+    protected function makeCheckoutParams():array
+    {
+        return [
+            'intent' => 'CAPTURE',
+            "purchase_units" => [
+                [
+                    'amount' => [
+                        'currency_code' => $this->settings->currency,
+                        'value' => $this->invoice->getAmount(),
+                    ]
+                ]
+            ],
+            'application_context' => [
+//                "landing_page" => "LOGIN",
+                "shipping_preference" => "NO_SHIPPING",
+                "return_url" => $this->settings->callbackUrl,
+                "cancel_url" => $this->settings->callbackUrl,
+            ],
+        ];
     }
 
     /**
-     * Retrieve payment mode.
-     *
-     * @return string
+     * @throws GuzzleException
      */
-    protected function getMode() : string
+    protected function getAccessToken() : string
     {
-        return strtolower($this->settings->mode);
+        $authorization = "Basic " . base64_encode($this->settings->clientId . ':' . $this->settings->clientSecret);
+
+        $response = $this
+            ->client
+            ->request(
+                'POST',
+                $this->getAccessTokenUrl(),
+                [
+                    "form_params" => [
+                        'grant_type' => 'client_credentials',
+                    ],
+                    "headers" => [
+                        'Authorization' => $authorization,
+                        'Content-Type' => 'application/x-www-form-urlencoded'
+                    ],
+                    "http_errors" => false,
+                ]
+            );
+
+        $result = json_decode($response->getBody()->getContents(), true);
+
+        return $result['access_token'];
     }
 }

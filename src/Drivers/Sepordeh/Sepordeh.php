@@ -19,7 +19,7 @@ class Sepordeh extends Driver
      *
      * @var object
      */
-    protected $client;
+    protected \GuzzleHttp\Client $client;
 
     /**
      * Invoice
@@ -39,7 +39,6 @@ class Sepordeh extends Driver
      * Sepordeh constructor.
      * Construct the class with the relevant settings.
      *
-     * @param Invoice $invoice
      * @param $settings
      */
     public function __construct(Invoice $invoice, $settings)
@@ -65,7 +64,7 @@ class Sepordeh extends Driver
 
         $data = [
             "merchant" => $this->settings->merchantId,
-            "amount" => $this->invoice->getAmount(),
+            "amount" => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10), // convert to toman
             "phone" => $phone,
             "orderId" => $orderId,
             "callback" => $this->settings->callbackUrl,
@@ -105,7 +104,7 @@ class Sepordeh extends Driver
      *
      * @return string
      */
-    private function extractDetails($name)
+    private function extractDetails(string $name)
     {
         return empty($this->invoice->getDetails()[$name]) ? null : $this->invoice->getDetails()[$name];
     }
@@ -114,8 +113,6 @@ class Sepordeh extends Driver
      * Retrieve related message to given status code
      *
      * @param $statusCode
-     *
-     * @return string
      */
     private function convertStatusCodeToMessage(int $statusCode): string
     {
@@ -135,8 +132,6 @@ class Sepordeh extends Driver
 
     /**
      * Pay the Invoice
-     *
-     * @return RedirectionForm
      */
     public function pay(): RedirectionForm
     {
@@ -150,7 +145,6 @@ class Sepordeh extends Driver
     /**
      * Verify payment
      *
-     * @return ReceiptInterface
      *
      * @throws InvalidPaymentException
      * @throws \GuzzleHttp\Exception\GuzzleException
@@ -182,7 +176,7 @@ class Sepordeh extends Driver
         if ($statusCode !== 200) {
             $message = $body['message'] ?? $this->convertStatusCodeToMessage($statusCode);
 
-            $this->notVerified($message);
+            $this->notVerified($message, $statusCode);
         }
 
         $refId = $body['information']['invoice_id'];
@@ -201,19 +195,17 @@ class Sepordeh extends Driver
      *
      * @throws InvalidPaymentException
      */
-    private function notVerified($message)
+    private function notVerified($message, int $status)
     {
-        throw new InvalidPaymentException($message);
+        throw new InvalidPaymentException($message, $status);
     }
 
     /**
      * Generate the payment's receipt
      *
      * @param $referenceId
-     *
-     * @return Receipt
      */
-    protected function createReceipt($referenceId, $detail = [])
+    protected function createReceipt($referenceId, $detail = []): \Shetabit\Multipay\Receipt
     {
         $receipt = new Receipt('sepordeh', $referenceId);
         $receipt->detail($detail);

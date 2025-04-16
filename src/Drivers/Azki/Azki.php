@@ -26,7 +26,7 @@ class Azki extends Driver
      *
      * @var object
      */
-    protected $client;
+    protected \GuzzleHttp\Client $client;
 
     /**
      * Invoice
@@ -44,9 +44,6 @@ class Azki extends Driver
 
     protected $paymentUrl;
 
-    /**
-     * @return string
-     */
     public function getPaymentUrl(): string
     {
         return $this->paymentUrl;
@@ -77,8 +74,8 @@ class Azki extends Driver
         if (empty($details['phone']) && empty($details['mobile'])) {
             throw new PurchaseFailedException('Phone number is required');
         }
-        if (count($this->getItems()) == 0) {
-            throw new PurchaseFailedException('Items is required');
+        if (!isset($details['items']) ||  count($details['items']) == 0) {
+            throw new PurchaseFailedException('Items is required for this driver');
         }
 
         $merchant_id = $this->settings->merchantId;
@@ -96,7 +93,7 @@ class Azki extends Driver
         );
 
         $data = [
-            "amount"        => $this->invoice->getAmount() * 10, // convert toman to rial
+            "amount"        => $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1), // convert to rial
             "redirect_uri"  => $callback,
             "fallback_uri"  => $fallback,
             "provider_id"   => $order_id,
@@ -142,7 +139,7 @@ class Azki extends Driver
     }
 
 
-    private function makeSignature($sub_url, $request_method = 'POST')
+    private function makeSignature(string $sub_url, string $request_method = 'POST'): string
     {
         $time = time();
         $key  = $this->settings->key;
@@ -150,14 +147,16 @@ class Azki extends Driver
         $plain_signature = "{$sub_url}#{$time}#{$request_method}#{$key}";
         $encrypt_method  = "AES-256-CBC";
         $secret_key      = hex2bin($key);
-        $secret_iv       = str_repeat(0, 16);
 
         $digest = @openssl_encrypt($plain_signature, $encrypt_method, $secret_key, OPENSSL_RAW_DATA);
 
         return bin2hex($digest);
     }
 
-    private function convertAmountItems()
+    /**
+     * @return mixed[]
+     */
+    private function convertAmountItems(): array
     {
         /**
          * example data
@@ -180,8 +179,8 @@ class Azki extends Driver
          */
 
         $new_items = array_map(
-            function ($item) {
-                $item['amount'] *= 10;  // convert toman to rial
+            function (array $item) {
+                $item['amount'] *= ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
                 return $item;
             },
             $this->invoice->getDetails()['items'] ?? []
@@ -192,12 +191,11 @@ class Azki extends Driver
     }
 
     /**
-     * @param array $data
      * @param       $signature
      * @param       $url
      * @return mixed
      */
-    public function ApiCall(array $data, $signature, $url, $request_method = 'POST')
+    public function ApiCall(array $data, $signature, $url, string $request_method = 'POST')
     {
         $response = $this
             ->client
@@ -218,11 +216,12 @@ class Azki extends Driver
         $response_array = json_decode($response->getBody()->getContents(), true);
 
 
-        if (($response->getStatusCode() === null or $response->getStatusCode() != 200) || $response_array['rsCode'] != self::SUCCESSFUL) {
+        if (($response->getStatusCode() === null || $response->getStatusCode() != 200) || $response_array['rsCode'] != self::SUCCESSFUL) {
             $this->purchaseFailed($response_array['rsCode']);
         } else {
             return $response_array['result'];
         }
+        return null;
     }
 
     /**
@@ -258,9 +257,8 @@ class Azki extends Driver
 
         if (array_key_exists($status, $translations)) {
             throw new PurchaseFailedException($translations[$status]);
-        } else {
-            throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
         }
+        throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
     }
 
     private function getPaymentStatus()
@@ -304,23 +302,18 @@ class Azki extends Driver
 
         if (array_key_exists($status, $translations)) {
             throw new PurchaseFailedException("تراکنش در وضعیت " . $translations[$status] . " است.");
-        } else {
-            throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
         }
+        throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
     }
 
     /**
      * Generate the payment's receipt
      *
      * @param $referenceId
-     *
-     * @return Receipt
      */
     private function createReceipt($referenceId): Receipt
     {
-        $receipt = new Receipt('azki', $referenceId);
-
-        return $receipt;
+        return new Receipt('azki', $referenceId);
     }
 
     private function VerifyTransaction()

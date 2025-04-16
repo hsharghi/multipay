@@ -18,7 +18,7 @@ class Rayanpay extends Driver
      *
      * @var object
      */
-    protected $client;
+    protected \GuzzleHttp\Client $client;
 
     /**
      * Invoice
@@ -38,12 +38,10 @@ class Rayanpay extends Driver
      * Open Gate By Render Html
      * @var string $htmlPay
      */
-
     /**
      * Sadad constructor.
      * Construct the class with the relevant settings.
      *
-     * @param Invoice $invoice
      * @param $settings
      */
     public function __construct(Invoice $invoice, $settings)
@@ -101,16 +99,17 @@ class Rayanpay extends Driver
             throw new PurchaseFailedException('شماره موبایل را وارد کنید.');
         }
 
-        if (preg_match('/^(?:98)?9[0-9]{9}$/', $mobile) == false) {
+        if (preg_match('/^(?:98)?9\d{9}$/', $mobile) == false) {
             $mobile = '';
         }
 
-        if (($this->invoice->getAmount() * 10) <= 1000) {
-            throw new PurchaseFailedException('مقدار مبلغ ارسالی بزگتر از 1000 باشد.');
+        $amount = $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
+
+        if ($amount <= 10000) {
+            throw new PurchaseFailedException('مقدار مبلغ ارسالی بزگتر از 10000 ریال باشد.');
         }
 
         $referenceId = hexdec(uniqid());
-        $amount = $this->invoice->getAmount();
 
         $callback = $this->settings->callbackUrl . "?referenceId=" . $referenceId . "&price=" . $amount . "&mobile=" . $mobile;
 
@@ -140,27 +139,25 @@ class Rayanpay extends Driver
         $xp = new \DOMXPath($dom);
         $nodes = $xp->query('//input[@name="RefId"]');
         $node = $nodes->item(0);
-        session()->put('RefId', $node->getAttribute('value'));
+        $_SESSION['RefId'] = $node->getAttribute('value');
+
         return $this->invoice->getTransactionId();
     }
 
     /**
      * Pay the Invoice render html redirect to getway
-     *
-     * @return RedirectionForm
      */
     public function pay(): RedirectionForm
     {
         return $this->redirectWithForm($this->settings->apiPurchaseUrl, [
             'x_GateChanged' => 0,
-            'RefId' => session('RefId')
+            'RefId' => empty($_SESSION['RefId']) ? null : $_SESSION['RefId'],
         ], 'POST');
     }
 
     /**
      * Verify payment
      *
-     * @return ReceiptInterface
      *
      * @throws InvalidPaymentException
      * @throws \GuzzleHttp\Exception\GuzzleException
@@ -197,14 +194,10 @@ class Rayanpay extends Driver
      * Generate the payment's receipt
      *
      * @param $referenceId
-     *
-     * @return Receipt
      */
-    protected function createReceipt($referenceId)
+    protected function createReceipt($referenceId): \Shetabit\Multipay\Receipt
     {
-        $receipt = new Receipt('rayanpay', $referenceId);
-
-        return $receipt;
+        return new Receipt('rayanpay', $referenceId);
     }
 
 
@@ -215,12 +208,11 @@ class Rayanpay extends Driver
      * @param $method
      * @throws InvalidPaymentException
      */
-    private function notVerified($status, $method)
+    private function notVerified($status, string $method): void
     {
         $message = "";
-        if ($method == 'token') {
+        if ($method === 'token') {
             switch ($status) {
-
                 case '400':
                     $message = 'نقص در پارامترهای ارسالی';
                     break;
@@ -233,7 +225,7 @@ class Rayanpay extends Driver
                     $message = 'خطایی سمت سرور رخ داده است';
                     break;
             }
-        } elseif ($method == 'payment_start') {
+        } elseif ($method === 'payment_start') {
             switch ($status) {
                 case '400':
                     $message = 'شناسه ارسالی تکراری می باشد ';
@@ -250,7 +242,7 @@ class Rayanpay extends Driver
                     $message = 'خطایی سمت سرور رخ داده است (احتمال تکراری بودن شماره ref شما یا اگر شماره موبایل دارید باید فرمت زیر باشد 989121112233 )';
                     break;
             }
-        } elseif ($method == 'payment_status') {
+        } elseif ($method === 'payment_status') {
             switch ($status) {
                 case '401':
                     $message = 'توکن نامعتبر است';
@@ -263,9 +255,8 @@ class Rayanpay extends Driver
                     $message = 'پرداخت در حالت Pending می باشد و باید متد fullfill برای تعیین وضعیت صدا زده شود';
                     break;
             }
-        } elseif ($method == 'payment_parse') {
+        } elseif ($method === 'payment_parse') {
             switch ($status) {
-
                 case '401':
                     $message = 'توکن نامعتبر است';
                     break;
@@ -295,14 +286,13 @@ class Rayanpay extends Driver
                     break;
             }
         }
-        if ($message) {
-            throw new InvalidPaymentException($message);
-        } else {
-            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.');
+        if ($message !== '' && $message !== '0') {
+            throw new InvalidPaymentException($message, (int)$status);
         }
+        throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.', (int)$status);
     }
 
-    private function makeHttpChargeRequest($data, $url, $method, $forAuth = true)
+    private function makeHttpChargeRequest(array $data, $url, string $method, bool $forAuth = true)
     {
         $header[] = 'Content-Type: application/json';
         if ($forAuth) {
@@ -318,7 +308,7 @@ class Rayanpay extends Driver
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         if ($http_code != 200) {
-            return $this->notVerified($http_code, $method);
+            $this->notVerified($http_code, $method);
         }
         return $result;
     }

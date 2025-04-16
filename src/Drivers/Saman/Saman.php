@@ -31,7 +31,6 @@ class Saman extends Driver
      * Saman constructor.
      * Construct the class with the relevant settings.
      *
-     * @param Invoice $invoice
      * @param $settings
      */
     public function __construct(Invoice $invoice, $settings)
@@ -50,12 +49,12 @@ class Saman extends Driver
      */
     public function purchase()
     {
-        $data = array(
+        $data = [
             'MID' => $this->settings->merchantId,
             'ResNum' => $this->invoice->getUuid(),
-            'Amount' => $this->invoice->getAmount() * 10, // convert to rial
+            'Amount' => $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1), // convert to rial
             'CellNumber' => ''
-        );
+        ];
 
         //set CellNumber for get user cards
         if (!empty($this->invoice->getDetails()['mobile'])) {
@@ -92,8 +91,6 @@ class Saman extends Driver
 
     /**
      * Pay the Invoice
-     *
-     * @return RedirectionForm
      */
     public function pay(): RedirectionForm
     {
@@ -112,17 +109,17 @@ class Saman extends Driver
     /**
      * Verify payment
      *
-     * @return ReceiptInterface
      *
      * @throws InvalidPaymentException
      * @throws \SoapFault
      */
     public function verify(): ReceiptInterface
     {
-        $data = array(
+        $data = [
             'RefNum' => Request::input('RefNum'),
             'merchantId' => $this->settings->merchantId,
-        );
+            'password' => $this->settings->password,
+        ];
 
         $soap = new \SoapClient(
             $this->settings->apiVerificationUrl,
@@ -142,6 +139,13 @@ class Saman extends Driver
             $this->notVerified($status);
         }
 
+        $verifiedAmount = $status; // if status is bigger than 0 , it represents amount
+        if ($verifiedAmount !== $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1)) {
+            $soap->ReverseTransaction($data["RefNum"], $data["merchantId"], $data["password"], $verifiedAmount);
+            $status = -100;
+            $this->notVerified($status);
+        }
+
         $receipt =  $this->createReceipt($data['RefNum']);
         $receipt->detail([
             'traceNo' => Request::input('TraceNo'),
@@ -157,14 +161,10 @@ class Saman extends Driver
      * Generate the payment's receipt
      *
      * @param $referenceId
-     *
-     * @return Receipt
      */
-    protected function createReceipt($referenceId)
+    protected function createReceipt($referenceId): \Shetabit\Multipay\Receipt
     {
-        $receipt = new Receipt('saman', $referenceId);
-
-        return $receipt;
+        return new Receipt('saman', $referenceId);
     }
 
     /**
@@ -176,9 +176,9 @@ class Saman extends Driver
      */
     protected function purchaseFailed($status)
     {
-        $translations = array(
+        $translations = [
             -1 => ' تراکنش توسط خریدار کنسل شده است.',
-            -6 => 'سند قبال برگشت کامل یافته است. یا خارج از زمان 30 دقیقه ارسال شده است.',
+            -6 => 'سند قابل برگشت کامل یافته است. یا خارج از زمان 30 دقیقه ارسال شده است.',
             -18 => 'IP Address فروشنده نا‌معتبر است.',
             79 => 'مبلغ سند برگشتی، از مبلغ تراکنش اصلی بیشتر است.',
             12 => 'درخواست برگشت یک تراکنش رسیده است، در حالی که تراکنش اصلی پیدا نمی شود.',
@@ -190,17 +190,16 @@ class Saman extends Driver
             61 => 'مبلغ بیش از سقف برداشت می باشد.',
             93 => 'تراکنش Authorize شده است (شماره PIN و PAN درست هستند) ولی امکان سند خوردن وجود ندارد.',
             68 => 'تراکنش در شبکه بانکی Timeout خورده است.',
-            34 => 'خریدار یا فیلد CVV2 و یا فیلد ExpDate را اشتباه وارد کرده است (یا اصال وارد نکرده است).',
+            34 => 'خریدار یا فیلد CVV2 و یا فیلد ExpDate را اشتباه وارد کرده است (یا اصلا وارد نکرده است).',
             51 => 'موجودی حساب خریدار، کافی نیست.',
             84 => 'سیستم بانک صادر کننده کارت خریدار، در وضعیت عملیاتی نیست.',
             96 => 'کلیه خطاهای دیگر بانکی باعث ایجاد چنین خطایی می گردد.',
-        );
+        ];
 
         if (array_key_exists($status, $translations)) {
             throw new PurchaseFailedException($translations[$status]);
-        } else {
-            throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
         }
+        throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
     }
 
     /**
@@ -210,31 +209,31 @@ class Saman extends Driver
      *
      * @throws InvalidPaymentException
      */
-    private function notVerified($status)
+    private function notVerified(int $status): void
     {
-        $translations = array(
+        $translations = [
             -1 => 'خطا در پردازش اطلاعات ارسالی (مشکل در یکی از ورودی ها و ناموفق بودن فراخوانی متد برگشت تراکنش)',
-            -3 => 'ورودیها حاوی کارکترهای غیرمجاز میباشند.',
+            -3 => 'ورودی ها حاوی کارکترهای غیرمجاز میباشند.',
             -4 => 'کلمه عبور یا کد فروشنده اشتباه است (Merchant Authentication Failed)',
-            -6 => 'سند قبال برگشت کامل یافته است. یا خارج از زمان 30 دقیقه ارسال شده است.',
+            -6 => 'سند قابل برگشت کامل یافته است. یا خارج از زمان 30 دقیقه ارسال شده است.',
             -7 => 'رسید دیجیتالی تهی است.',
-            -8 => 'طول ورودیها بیشتر از حد مجاز است.',
+            -8 => 'طول ورودی ها بیشتر از حد مجاز است.',
             -9 => 'وجود کارکترهای غیرمجاز در مبلغ برگشتی.',
             -10 => 'رسید دیجیتالی به صورت Base64 نیست (حاوی کاراکترهای غیرمجاز است)',
-            -11 => 'طول ورودیها ک تر از حد مجاز است.',
+            -11 => 'طول ورودی ها کمتر از حد مجاز است.',
             -12 => 'مبلغ برگشتی منفی است.',
-            -13 => 'مبلغ برگشتی برای برگشت جزئی بیش از مبلغ برگشت نخوردهی رسید دیجیتالی است.',
+            -13 => 'مبلغ برگشتی برای برگشت جزئی بیش از مبلغ برگشت نخورده ی رسید دیجیتالی است.',
             -14 => 'چنین تراکنشی تعریف نشده است.',
             -15 => 'مبلغ برگشتی به صورت اعشاری داده شده است.',
             -16 => 'خطای داخلی سیستم',
             -17 => 'برگشت زدن جزیی تراکنش مجاز نمی باشد.',
             -18 => 'IP Address فروشنده نا معتبر است و یا رمز تابع بازگشتی (reverseTransaction) اشتباه است.',
-        );
+            -100 => 'مبلغ برگشتی با مبلغ فاکتور همخوانی ندارد.',
+        ];
 
         if (array_key_exists($status, $translations)) {
-            throw new InvalidPaymentException($translations[$status]);
-        } else {
-            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.');
+            throw new InvalidPaymentException($translations[$status], (int)$status);
         }
+        throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.', $status);
     }
 }

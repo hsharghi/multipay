@@ -2,7 +2,6 @@
 
 namespace Shetabit\Multipay\Drivers\Sepehr;
 
-use Illuminate\Support\Facades\Log;
 use Shetabit\Multipay\Abstracts\Driver;
 use Shetabit\Multipay\Exceptions\InvalidPaymentException;
 use Shetabit\Multipay\Exceptions\PurchaseFailedException;
@@ -14,7 +13,6 @@ use Shetabit\Multipay\Request;
 
 class Sepehr extends Driver
 {
-
     /**
      * Invoice
      *
@@ -51,7 +49,7 @@ class Sepehr extends Driver
      */
     public function purchase()
     {
-        $amount = $this->invoice->getAmount() * 10; // convert to rial
+        $amount = $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
 
         $mobile = '';
         //set CellNumber for get user cards
@@ -105,11 +103,11 @@ class Sepehr extends Driver
      */
     public function verify(): ReceiptInterface
     {
-        $resp_code = Request::input('respcode');
-        $amount = $this->invoice->getAmount() * 10; // convert to rial
+        $responseCode = Request::input('respcode');
+        $amount = $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
 
-        if ($resp_code != 0) {
-            $this->notVerified($resp_code);
+        if ($responseCode != 0) {
+            $this->notVerified($responseCode);
         }
 
         $data_query = 'digitalreceipt=' . Request::input('digitalreceipt') . '&Tid=' . $this->settings->terminalId;
@@ -123,33 +121,20 @@ class Sepehr extends Driver
             if ($return_id != $amount) {
                 throw new InvalidPaymentException('مبلغ واریز با قیمت محصول برابر نیست');
             }
-            $receipt = $this->createReceipt(Request::input('rrn'));
-            $receipt->detail([
-                'traceNo' => Request::input('tracenumber'),
-                'referenceNo' => Request::input('rrn'),
-                'transactionId' => Request::input('_transactionId'),
-                'cardNo' => Request::input('cardnumber'),
-            ]);
-
-            return $receipt;
-        } else {
-            $message = 'تراکنش نا موفق بود در صورت کسر مبلغ از حساب شما حداکثر پس از 72 ساعت مبلغ به حسابتان برمیگردد.';
-            throw new InvalidPaymentException($message);
+            return $this->createReceipt(Request::input('rrn'));
         }
+        $message = 'تراکنش نا موفق بود در صورت کسر مبلغ از حساب شما حداکثر پس از 72 ساعت مبلغ به حسابتان برمیگردد.';
+        throw new InvalidPaymentException($message);
     }
 
     /**
      * Generate the payment's receipt
      *
      * @param $referenceId
-     *
-     * @return Receipt
      */
-    protected function createReceipt($referenceId)
+    protected function createReceipt($referenceId): \Shetabit\Multipay\Receipt
     {
-        $receipt = new Receipt('sepehr', $referenceId);
-
-        return $receipt;
+        return new Receipt('sepehr', $referenceId);
     }
 
     /**
@@ -161,20 +146,19 @@ class Sepehr extends Driver
      */
     protected function purchaseFailed($status)
     {
-        $translations = array(
+        $translations = [
             -1 => 'تراکنش پیدا نشد.',
             -2 => 'عدم تطابق ip و یا بسته بودن port 8081',
             -3 => '‫ها‬ ‫‪Exception‬‬ ‫خطای‬ ‫–‬ ‫عمومی‬ ‫خطای‬ ‫‪Total‬‬ ‫‪Error‬‬',
             -4 => 'امکان انجام درخواست برای این تراکنش وجود ندارد.',
             -5 => 'آدرس ip نامعتبر می‌باشد.',
             -6 => 'عدم فعال بودن سرویس برگشت تراکنش برای پذیرنده',
-        );
+        ];
 
         if (array_key_exists($status, $translations)) {
             throw new PurchaseFailedException($translations[$status]);
-        } else {
-            throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
         }
+        throw new PurchaseFailedException('خطای ناشناخته ای رخ داده است.');
     }
 
     /**
@@ -184,33 +168,31 @@ class Sepehr extends Driver
      *
      * @throws InvalidPaymentException
      */
-    private function notVerified($status)
+    private function notVerified($status): void
     {
-        $translations = array(
+        $translations = [
             -1 => ' تراکنش توسط خریدار کنسل شده است.',
             -2 => 'زمان انجام تراکنش برای کاربر به پایان رسیده است.',
             -3 => '‫ها‬ ‫‪Exception‬‬ ‫خطای‬ ‫–‬ ‫عمومی‬ ‫خطای‬ ‫‪Total‬‬ ‫‪Error‬‬',
             -4 => 'امکان انجام درخواست برای این تراکنش وجود ندارد.',
             -5 => 'آدرس ip نامعتبر می‌باشد.',
             -6 => 'عدم فعال بودن سرویس برگشت تراکنش برای پذیرنده',
-        );
+        ];
 
         if (array_key_exists($status, $translations)) {
-            throw new InvalidPaymentException($translations[$status]);
-        } else {
-            throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.');
+            throw new InvalidPaymentException($translations[$status], (int)$status);
         }
+        throw new InvalidPaymentException('خطای ناشناخته ای رخ داده است.', (int)$status);
     }
 
-    private function test_input($data)
+    private function test_input($data): string
     {
         $data = trim($data);
         $data = stripslashes($data);
-        $data = htmlspecialchars($data);
-        return $data;
+        return htmlspecialchars($data);
     }
 
-    private function makeHttpChargeRequest($_Method, $_Data, $_Address)
+    private function makeHttpChargeRequest(string $_Method, string $_Data, $_Address): bool|string
     {
         $curl = curl_init();
         curl_setopt($curl, CURLOPT_URL, $_Address);

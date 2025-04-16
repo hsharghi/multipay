@@ -21,7 +21,7 @@ class Sadad extends Driver
      *
      * @var object
      */
-    protected $client;
+    protected \GuzzleHttp\Client $client;
 
     /**
      * Invoice
@@ -41,7 +41,6 @@ class Sadad extends Driver
      * Sadad constructor.
      * Construct the class with the relevant settings.
      *
-     * @param Invoice $invoice
      * @param $settings
      */
     public function __construct(Invoice $invoice, $settings)
@@ -63,7 +62,7 @@ class Sadad extends Driver
     {
         $terminalId = $this->settings->terminalId;
         $orderId = crc32($this->invoice->getUuid());
-        $amount = $this->invoice->getAmount() * 10; // convert to rial
+        $amount = $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1); // convert to rial
         $key = $this->settings->key;
 
         $signData = $this->encrypt_pkcs7("$terminalId;$orderId;$amount", $key);
@@ -77,16 +76,11 @@ class Sadad extends Driver
         }
 
         //set MobileNo for get user cards
-        if (!empty($this->invoice->getDetails()['mobile'])) {
-            $mobile = $this->invoice->getDetails()['mobile'];
-        } else {
-            $mobile = "";
-        }
+        $mobile = empty($this->invoice->getDetails()['mobile']) ? "" : $this->invoice->getDetails()['mobile'];
 
-        $data = array(
+        $data = [
             'MerchantId' => $this->settings->merchantId,
             'ReturnUrl' => $this->settings->callbackUrl,
-            'PaymentIdentity' => $this->settings->PaymentIdentity,
             'LocalDateTime' => $iranTime->format("m/d/Y g:i:s a"),
             'SignData' => $signData,
             'TerminalId' => $terminalId,
@@ -94,7 +88,35 @@ class Sadad extends Driver
             'OrderId' => $orderId,
             'additionalData' => $description,
             'UserId' => $mobile,
-        );
+        ];
+
+        $mode = $this->getMode();
+
+        if ($mode === 'paymentbyidentity') {
+            //set PaymentIdentity for payment
+            if (!empty($this->invoice->getDetails()['payment_identity'])) {
+                $data['PaymentIdentity'] = $this->invoice->getDetails()['payment_identity'];
+            } else {
+                $data['PaymentIdentity'] = $this->settings->PaymentIdentity;
+            }
+        } elseif ($mode === 'paymentbymultiidentity') {
+            //set MultiIdentityData for payment
+            if (!empty($this->invoice->getDetails()['multi_identity_rows'])) {
+                $multiIdentityRows = $this->invoice->getDetails()['multi_identity_rows'];
+            } else {
+                $multiIdentityRows = $this->settings->MultiIdentityRows;
+            }
+
+            // convert to rial
+            if ($this->settings->currency == 'T') {
+                $multiIdentityRows = array_map(function (array $item) {
+                    $item['Amount'] *= 10;
+                    return $item;
+                }, $multiIdentityRows);
+            }
+
+            $data['MultiIdentityData'] = ['MultiIdentityRows' => $multiIdentityRows];
+        }
 
         $response = $this
             ->client
@@ -112,10 +134,11 @@ class Sadad extends Driver
             );
 
         $body = @json_decode($response->getBody()->getContents());
-
         if (empty($body)) {
             throw new PurchaseFailedException('دسترسی به صفحه مورد نظر امکان پذیر نمی باشد.');
-        } elseif ($body->ResCode != 0) {
+        }
+
+        if ($body->ResCode != 0) {
             throw new PurchaseFailedException($body->Description);
         }
 
@@ -127,8 +150,6 @@ class Sadad extends Driver
 
     /**
      * Pay the Invoice
-     *
-     * @return RedirectionForm
      */
     public function pay() : RedirectionForm
     {
@@ -141,7 +162,6 @@ class Sadad extends Driver
     /**
      * Verify payment
      *
-     * @return ReceiptInterface
      *
      * @throws InvalidPaymentException
      * @throws \GuzzleHttp\Exception\GuzzleException
@@ -156,10 +176,10 @@ class Sadad extends Driver
             throw new InvalidPaymentException($this->translateStatus($resCode), $resCode);
         }
 
-        $data = array(
+        $data = [
             'Token' => $token,
             'SignData' => $this->encrypt_pkcs7($token, $key)
-        );
+        ];
 
         $response = $this
             ->client
@@ -204,14 +224,10 @@ class Sadad extends Driver
      * Generate the payment's receipt
      *
      * @param $referenceId
-     *
-     * @return Receipt
      */
-    protected function createReceipt($referenceId)
+    protected function createReceipt($referenceId): \Shetabit\Multipay\Receipt
     {
-        $receipt = new Receipt('sadad', $referenceId);
-
-        return $receipt;
+        return new Receipt('sadad', $referenceId);
     }
 
     /**
@@ -219,10 +235,8 @@ class Sadad extends Driver
      *
      * @param $str
      * @param $key
-     *
-     * @return string
      */
-    protected function encrypt_pkcs7($str, $key)
+    protected function encrypt_pkcs7($str, $key): string
     {
         $key = base64_decode($key);
         $ciphertext = OpenSSL_encrypt($str, "DES-EDE3", $key, OPENSSL_RAW_DATA);
@@ -232,8 +246,6 @@ class Sadad extends Driver
 
     /**
      * Retrieve payment mode.
-     *
-     * @return string
      */
     protected function getMode() : string
     {
@@ -243,44 +255,25 @@ class Sadad extends Driver
 
     /**
      * Retrieve purchase url
-     *
-     * @return string
      */
     protected function getPurchaseUrl() : string
     {
-        $mode = $this->getMode();
-
-        switch ($mode) {
-            case 'paymentbyidentity':
-                $url = $this->settings->apiPurchaseUrl;
-                break;
-            default: // default: normal
-                $url = $this->settings->apiPurchaseUrl;
-                break;
-        }
-
-        return $url;
+        return $this->settings->apiPurchaseUrl;
     }
 
     /**
      * Retrieve Payment url
-     *
-     * @return string
      */
     protected function getPaymentUrl() : string
     {
         $mode = $this->getMode();
 
-        switch ($mode) {
-            case 'paymentbyidentity':
-                $url = $this->settings->apiPaymentByIdentityUrl;
-                break;
-            default: // default: normal
-                $url = $this->settings->apiPaymentUrl;
-                break;
-        }
-
-        return $url;
+        return match ($mode) {
+            'paymentbyidentity' => $this->settings->apiPaymentByIdentityUrl,
+            'paymentbymultiidentity' => $this->settings->apiPaymentByMultiIdentityUrl,
+            // default: normal
+            default => $this->settings->apiPaymentUrl,
+        };
     }
 
     /**
@@ -290,7 +283,7 @@ class Sadad extends Driver
      *
      * @return mixed|string
      */
-    private function translateStatus($status)
+    private function translateStatus($status): string
     {
         $translations = [
             '0' => 'تراکنش با موفقیت انجام شد',

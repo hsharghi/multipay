@@ -3,9 +3,9 @@
 namespace Shetabit\Multipay\Drivers\Parsian;
 
 use Shetabit\Multipay\Abstracts\Driver;
+use Shetabit\Multipay\Contracts\ReceiptInterface;
 use Shetabit\Multipay\Exceptions\InvalidPaymentException;
 use Shetabit\Multipay\Exceptions\PurchaseFailedException;
-use Shetabit\Multipay\Contracts\ReceiptInterface;
 use Shetabit\Multipay\Invoice;
 use Shetabit\Multipay\Receipt;
 use Shetabit\Multipay\RedirectionForm;
@@ -31,7 +31,6 @@ class Parsian extends Driver
      * Parsian constructor.
      * Construct the class with the relevant settings.
      *
-     * @param Invoice $invoice
      * @param $settings
      */
     public function __construct(Invoice $invoice, $settings)
@@ -75,24 +74,25 @@ class Parsian extends Driver
 
     /**
      * Pay the Invoice
-     *
-     * @return RedirectionForm
      */
     public function pay() : RedirectionForm
     {
-        $payUrl = $this->settings->apiPaymentUrl . '?Token=' . $this->invoice->getTransactionId() ;
+        $payUrl = sprintf(
+            '%s?Token=%s',
+            $this->settings->apiPaymentUrl,
+            $this->invoice->getTransactionId()
+        );
 
         return $this->redirectWithForm(
             $payUrl,
             ['Token' => $this->invoice->getTransactionId()],
-            'POST'
+            'GET'
         );
     }
 
     /**
      * Verify payment
      *
-     * @return ReceiptInterface
      *
      * @throws InvalidPaymentException
      * @throws \SoapFault
@@ -100,10 +100,10 @@ class Parsian extends Driver
     public function verify() : ReceiptInterface
     {
         $status = Request::input('status');
-        $token = Request::input('Token');
+        $token = $this->invoice->getTransactionId() ?? Request::input('Token');
 
-        if ($status != 0 || empty($token)) {
-            throw new InvalidPaymentException('تراکنش توسط کاربر کنسل شده است.');
+        if (empty($token)) {
+            throw new InvalidPaymentException('تراکنش توسط کاربر کنسل شده است.', (int)$status);
         }
 
         $data = $this->prepareVerificationData();
@@ -119,7 +119,7 @@ class Parsian extends Driver
         $hasWrongRRN = (!isset($result->RRN) || $result->RRN <= 0);
         if ($hasWrongStatus || $hasWrongRRN) {
             $message = 'خطا از سمت بانک با کد '.$result->Status.' رخ داده است.';
-            throw new InvalidPaymentException($message);
+            throw new InvalidPaymentException($message, (int)$result->Status);
         }
 
         return $this->createReceipt($result->RRN);
@@ -129,50 +129,47 @@ class Parsian extends Driver
      * Generate the payment's receipt
      *
      * @param $referenceId
-     *
-     * @return Receipt
      */
-    protected function createReceipt($referenceId)
+    protected function createReceipt($referenceId): \Shetabit\Multipay\Receipt
     {
-        $receipt = new Receipt('parsian', $referenceId);
-
-        return $receipt;
+        return new Receipt('parsian', $referenceId);
     }
 
     /**
      * Prepare data for payment verification
-     *
-     * @return array
      */
-    protected function prepareVerificationData()
+    protected function prepareVerificationData(): array
     {
         $transactionId = $this->invoice->getTransactionId() ?? Request::input('Token');
 
-        return array(
-            'LoginAccount'      => $this->settings->merchantId,
-            'Token'         => $transactionId,
-        );
+        return [
+            'LoginAccount' => $this->settings->merchantId,
+            'Token'        => $transactionId,
+        ];
     }
 
     /**
      * Prepare data for purchasing invoice
-     *
-     * @return array
      */
-    protected function preparePurchaseData()
+    protected function preparePurchaseData(): array
     {
-        if (!empty($this->invoice->getDetails()['description'])) {
-            $description = $this->invoice->getDetails()['description'];
-        } else {
+        // The bank suggests that an English description is better
+        if (empty($description = $this->invoice->getDetail('description'))) {
             $description = $this->settings->description;
         }
 
-        return array(
-            'LoginAccount'      => $this->settings->merchantId,
-            'Amount'            => $this->invoice->getAmount() * 10, // convert to rial
-            'OrderId'           => crc32($this->invoice->getUuid()),
-            'CallBackUrl'       => $this->settings->callbackUrl,
-            'AdditionalData'    => $description,
-        );
+        $phone = $this->invoice->getDetail('phone')
+            ?? $this->invoice->getDetail('cellphone')
+            ?? $this->invoice->getDetail('mobile');
+
+
+        return [
+            'LoginAccount'   => $this->settings->merchantId,
+            'Amount'         => $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1), // convert to rial
+            'OrderId'        => crc32($this->invoice->getUuid()),
+            'CallBackUrl'    => $this->settings->callbackUrl,
+            'Originator'     => $phone,
+            'AdditionalData' => $description,
+        ];
     }
 }
