@@ -1,6 +1,6 @@
 <?php
 
-namespace Shetabit\Multipay\Drivers\Nextpay;
+namespace Shetabit\Multipay\Drivers\Gardeshgari;
 
 use GuzzleHttp\Client;
 use Shetabit\Multipay\Abstracts\Driver;
