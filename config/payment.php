@@ -141,6 +141,15 @@ return [
             'description' => 'payment using jibit',
             'currency' => 'T', // Can be R, T (Rial, Toman)
         ],
+        'gardeshgari' => [
+            'apiPurchaseUrl' => 'https://ipg.gardeshpay.ir/v1/provider/payment/getToken',
+            'apiPaymentUrl' => '',
+            'apiVerificationUrl' => 'https://ipg.gardeshpay.ir/v1/provider/payment/verify',
+            'apiToken' => '',
+            'callbackUrl' => 'http://yoursite.com/path/to',
+            'description' => 'payment using gardeshgari bank',
+            'currency' => 'T', //Can be R, T (Rial, Toman)
+        ],
         'nextpay' => [
             'apiPurchaseUrl' => 'https://nextpay.org/nx/gateway/token',
             'apiPaymentUrl' => 'https://nextpay.org/nx/gateway/payment/',
@@ -511,7 +520,7 @@ return [
         'irandargah' => \Shetabit\Multipay\Drivers\IranDargah\IranDargah::class,
         'irankish' => \Shetabit\Multipay\Drivers\Irankish\Irankish::class,
         'jibit' => \Shetabit\Multipay\Drivers\Jibit\Jibit::class,
-        'nextpay' => \Shetabit\Multipay\Drivers\Nextpay\Nextpay::class,
+        'nextpay' => \Shetabit\Multipay\Drivers\Nextpay\Gardeshgari::class,
         'omidpay' => \Shetabit\Multipay\Drivers\Omidpay\Omidpay::class,
         'parsian' => \Shetabit\Multipay\Drivers\Parsian\Parsian::class,
         'parspal' => \Shetabit\Multipay\Drivers\Parspal\Parspal::class,
