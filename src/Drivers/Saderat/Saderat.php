@@ -47,7 +47,8 @@ class Saderat extends Driver
         $this->invoice($invoice);
         $this->settings = (object)$settings;
         $this->client = new Client([
-            'curl' => [CURLOPT_SSL_CIPHER_LIST => 'DEFAULT@SECLEVEL=1'],
+            'timeout' => 30,
+            'connect_timeout' => 10,
         ]);
     }
 
