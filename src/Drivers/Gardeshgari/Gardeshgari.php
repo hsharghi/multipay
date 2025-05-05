@@ -63,7 +63,7 @@ class Gardeshgari extends Driver
             'invoiceNumber' => $this->invoice->getUuid(),
             'invoiceDate' => date('Y-m-d'),
             'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10), // convert to toman
-            'callback_uri' => $this->settings->callbackUrl,
+            'callback' => $this->settings->callbackUrl,
         ];
 
         $data['mobile'] = $this->invoice->getDetail('phone')
