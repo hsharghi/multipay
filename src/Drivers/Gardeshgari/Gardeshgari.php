@@ -3,6 +3,7 @@
 namespace Shetabit\Multipay\Drivers\Gardeshgari;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
 use Shetabit\Multipay\Abstracts\Driver;
 use Shetabit\Multipay\Contracts\ReceiptInterface;
 use Shetabit\Multipay\Exceptions\InvalidPaymentException;
@@ -58,49 +59,68 @@ class Gardeshgari extends Driver
      */
     public function purchase()
     {
-        $data = [
-            'token' => $this->settings->apiToken,
-            'invoiceNumber' => $this->invoice->getUuid(),
-            'invoiceDate' => date('Y-m-d'),
-            'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10), // convert to toman
-            'callback' => $this->settings->callbackUrl,
-        ];
+        try {
+            // Prepare request data
+            $data = [
+                'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10),
+                'invoiceNumber' => $this->invoice->getUuid(),
+                'invoiceDate' => date('Y-m-d'),
+                'callback' => $this->settings->callbackUrl,
+                'token' => $this->settings->apiToken,
+            ];
 
-        $data['mobile'] = $this->invoice->getDetail('phone')
-            ?? $this->invoice->getDetail('cellphone')
-            ?? $this->invoice->getDetail('mobile');
+            // Add optional parameters if provided
+            $data['mobile'] = $this->invoice->getDetail('phone')
+                ?? $this->invoice->getDetail('cellphone')
+                ?? $this->invoice->getDetail('mobile');
 
-        $data['email'] = $this->invoice->getDetail('email');
+            $data['email'] = $this->invoice->getDetail('email');
 
 
-        $response = $this
-            ->client
-            ->request(
+            // Make the API request
+            $response = $this->client->request(
                 'POST',
                 $this->settings->apiPurchaseUrl,
                 [
-                    "form_params" => $data,
-                    "http_errors" => false,
+                    'json' => $data,
+                    'headers' => [
+                        'Content-Type' => 'application/json',
+                        'Accept' => 'application/json'
+                    ]
                 ]
             );
 
-        $body = json_decode($response->getBody()->getContents(), true);
-        $success = (bool)$body['success'] ?? false;
+            // Process the response
+            $result = json_decode($response->getBody()->getContents(), true);
 
-        if (!$success) {
-            $code = (int)$body['code'] ?? 0;
-            $message = (int)$body['message'] ?? 'خطای نامشخص در دریافت توکن';
-            $errors = $body['errors'] ?? [];
-            throw new PurchaseFailedException($message, $code);
+            // Check if request was successful
+            if (isset($result['success']) && $result['success'] === true) {
+                $redirectUrl = $result['data']['url'] . '/' . $result['data']['token'];
+                $this->invoice->transactionId($redirectUrl);
+
+                return $this->invoice->getTransactionId();
+//
+//                return [
+//                    'success' => true,
+//                    'paymentUrl' => $result['data']['url'] . '/' . $result['data']['token'],
+//                    'token' => $result['data']['token'],
+//                    'message' => $result['message']
+//                ];
+            } else {
+                throw new \Exception('Error getting token: ' . ($result['message'] ?? 'Unknown error'));
+            }
+        } catch (RequestException $e) {
+            if ($e->hasResponse()) {
+                $errorBody = json_decode($e->getResponse()->getBody()->getContents(), true);
+                $code = (int)$errorBody['code'] ?? 0;
+
+                throw new PurchaseFailedException($errorBody['message'] ?? $e->getMessage(), $code);
+            } else {
+                throw new \Exception('Connection Error: ' . $e->getMessage());
+            }
+        } catch (\Exception $e) {
+            throw new \Exception('Error: ' . $e->getMessage());
         }
-
-        $url = $body['data']['url'];
-        $token = $body['data']['token'];
-        $message = $body['message'] ?? '';
-        $redirectUrl = "{$url}/{$token}";
-        $this->invoice->transactionId($redirectUrl);
-
-        return $this->invoice->getTransactionId();
     }
 
     /**
@@ -181,6 +201,4 @@ class Gardeshgari extends Driver
     {
         return new Receipt('gardeshgari', $referenceId);
     }
-
-
 }
