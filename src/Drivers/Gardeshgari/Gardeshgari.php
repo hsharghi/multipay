@@ -65,7 +65,7 @@ class Gardeshgari extends Driver
                 'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10),
                 'invoiceNumber' => $this->getInvoiceNumber(),
                 'invoiceDate' => date('Y-m-d'),
-                'callback' => $this->settings->callbackUrl,
+                'callback' => $this->getCallbackUrl(),
                 'token' => $this->settings->apiToken,
             ];
 
@@ -207,6 +207,20 @@ class Gardeshgari extends Driver
         $uuid = $this->invoice->getUuid();
         return substr(str_replace('-', '', $uuid), 0, 24);
     }
+
+    /**
+     * Get callbackUrl from invoice bag or settings
+     *
+     * @return string
+     */
+    protected function getCallbackUrl(): string
+    {
+        if ($callbackUrl = $this->invoice->getDetail('callbackUrl')) {
+            return $callbackUrl;
+        }
+        return $this->settings->callbackUrl;
+    }
+
     /**
      * Generate the payment's receipt
      *
