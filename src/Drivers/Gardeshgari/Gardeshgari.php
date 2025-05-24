@@ -36,6 +36,13 @@ class Gardeshgari extends Driver
     protected $settings;
 
     /**
+     * Redirect URI returned from gateway
+     *
+     * @var string
+     */
+    protected $redirectUrl;
+
+    /**
      * Gardeshgari constructor.
      * Construct the class with the relevant settings.
      *
@@ -95,17 +102,10 @@ class Gardeshgari extends Driver
 
             // Check if request was successful
             if (isset($result['success']) && $result['success'] === true) {
-                $redirectUrl = $result['data']['url'] . '/' . $result['data']['token'];
-                $this->invoice->transactionId($redirectUrl);
+                $this->redirectUrl = $result['data']['url'];
+                $this->invoice->transactionId($result['data']['token']);
 
                 return $this->invoice->getTransactionId();
-//
-//                return [
-//                    'success' => true,
-//                    'paymentUrl' => $result['data']['url'] . '/' . $result['data']['token'],
-//                    'token' => $result['data']['token'],
-//                    'message' => $result['message']
-//                ];
             } else {
                 throw new \Exception('Error getting token: ' . ($result['message'] ?? 'Unknown error'));
             }
@@ -128,7 +128,11 @@ class Gardeshgari extends Driver
      */
     public function pay(): RedirectionForm
     {
-        $payUrl = $this->invoice->getTransactionId();
+
+        $payUrl = implode('/', [
+            $this->redirectUrl,
+            $this->invoice->getTransactionId()
+        ]);
 
         return $this->redirectWithForm($payUrl, [], 'GET');
     }
