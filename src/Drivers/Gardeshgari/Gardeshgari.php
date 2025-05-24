@@ -191,10 +191,18 @@ class Gardeshgari extends Driver
         return $receipt;
     }
 
+    /**
+     * Get invoiceNumber from invoice bag or generate a new one
+     *
+     * Gardeshgari gateway does not support invoiceNumber with more
+     * Than 24 characters long. We have to trim it before using.
+     *
+     * @return string
+     */
     protected function getInvoiceNumber(): string
     {
         if ($invoiceNumber = $this->invoice->getDetail('invoiceNumber')) {
-            return $invoiceNumber;
+            return substr($invoiceNumber, 0, 24);
         }
         $uuid = $this->invoice->getUuid();
         return substr(str_replace('-', '', $uuid), 0, 24);
