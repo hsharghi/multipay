@@ -63,7 +63,7 @@ class Gardeshgari extends Driver
             // Prepare request data
             $data = [
                 'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10),
-                'invoiceNumber' => $this->invoice->getUuid(),
+                'invoiceNumber' => $this->getInvoiceNumber(),
                 'invoiceDate' => date('Y-m-d'),
                 'callback' => $this->settings->callbackUrl,
                 'token' => $this->settings->apiToken,
@@ -191,6 +191,14 @@ class Gardeshgari extends Driver
         return $receipt;
     }
 
+    protected function getInvoiceNumber(): string
+    {
+        if ($invoiceNumber = $this->invoice->getDetail('invoiceNumber')) {
+            return $invoiceNumber;
+        }
+        $uuid = $this->invoice->getUuid();
+        return substr(str_replace('-', '', $uuid), 0, 24);
+    }
     /**
      * Generate the payment's receipt
      *
