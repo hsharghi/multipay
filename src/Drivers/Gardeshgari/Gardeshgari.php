@@ -187,8 +187,8 @@ class Gardeshgari extends Driver
         $receipt->detail([
             // default params
             'traceNo' => $body['data']['refNumber'] ?? '',
-            'referenceNo' => $body['refNumber'],
-            'transactionId' => $body['invoiceNumber'],
+            'referenceNo' => $body['data']['refNumber'],
+            'transactionId' => $body['data']['invoiceNumber'],
             'cardNo' => $body['data']['cardNumber'] ?? '',
             // additional params
             'cardNumber' => $body['data']['cardNumber'] ?? '',
