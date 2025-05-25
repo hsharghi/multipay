@@ -153,7 +153,6 @@ class Gardeshgari extends Driver
             'token' => $this->settings->apiToken,
         ];
 
-var_dump($data);
         // Make the API request
         $response = $this->client->request(
             'POST',
