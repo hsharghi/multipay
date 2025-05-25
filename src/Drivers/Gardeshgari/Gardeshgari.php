@@ -150,27 +150,30 @@ class Gardeshgari extends Driver
 
         $data = [
             'trackingNumber' => $trackingNumber,
+            'token' => $this->settings->apiToken,
         ];
 
-        $response = $this
-            ->client
-            ->request(
-                'POST',
-                $this->settings->apiVerificationUrl,
-                [
-                    "form_params" => $data,
-                    "http_errors" => false,
+var_dump($data);
+        // Make the API request
+        $response = $this->client->request(
+            'POST',
+            $this->settings->apiVerificationUrl,
+            [
+                'json' => $data,
+                'headers' => [
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
                 ]
-            );
+            ]
+        );
 
         $body = json_decode($response->getBody()->getContents(), true);
 
         $success = (bool)$body['success'] ?? false;
 
         if (!$success) {
-            $code = (int)$body['code'] ?? 0;
-            $message = (int)$body['message'] ?? 'خطای نامشخص در تایید پرداخت';
-            $errors = $body['errors'] ?? [];
+            $code = 0;
+            $message = $body['message'] ?? 'خطای نامشخص در تایید پرداخت';
             throw new InvalidPaymentException($message, $code);
         }
 
@@ -183,8 +186,13 @@ class Gardeshgari extends Driver
 
         $receipt = $this->createReceipt($refNumber);
         $receipt->detail([
-            'cardNumber' => $body['data']['cardNumber'] ?? '',
+            // default params
             'traceNo' => $body['data']['refNumber'] ?? '',
+            'referenceNo' => $body['refNumber'],
+            'transactionId' => $body['invoiceNumber'],
+            'cardNo' => $body['data']['cardNumber'] ?? '',
+            // additional params
+            'cardNumber' => $body['data']['cardNumber'] ?? '',
             'message' => $body['message'] ?? '',
             'invoiceNumber' => $body['data']['invoiceNumber'] ?? '',
             'invoiceDate' => $body['data']['invoiceDate'] ?? '',
