@@ -192,6 +192,7 @@ class Gardeshgari extends Driver
             'cardNo' => $body['data']['cardNumber'] ?? '',
             // additional params
             'cardNumber' => $body['data']['cardNumber'] ?? '',
+            'transactionMessage' => $body['data']['message'] ?? '',
             'message' => $body['message'] ?? '',
             'invoiceNumber' => $body['data']['invoiceNumber'] ?? '',
             'invoiceDate' => $body['data']['invoiceDate'] ?? '',
