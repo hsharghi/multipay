@@ -2,12 +2,9 @@
 
 namespace Shetabit\Multipay\Drivers\Gardeshgari;
 
-use GuzzleHttp\Client;
-use GuzzleHttp\Exception\RequestException;
 use Shetabit\Multipay\Abstracts\Driver;
 use Shetabit\Multipay\Contracts\ReceiptInterface;
 use Shetabit\Multipay\Exceptions\InvalidPaymentException;
-use Shetabit\Multipay\Exceptions\PreviouslyVerifiedException;
 use Shetabit\Multipay\Exceptions\PurchaseFailedException;
 use Shetabit\Multipay\Invoice;
 use Shetabit\Multipay\Receipt;
@@ -16,11 +13,6 @@ use Shetabit\Multipay\Request;
 
 class Gardeshgari extends Driver
 {
-    /**
-     * Nextpay Client.
-     */
-    protected \GuzzleHttp\Client $client;
-
     /**
      * Invoice
      *
@@ -36,24 +28,15 @@ class Gardeshgari extends Driver
     protected $settings;
 
     /**
-     * Redirect URI returned from gateway
-     *
-     * @var string
-     */
-    protected $redirectUrl;
-
-    /**
-     * Gardeshgari constructor.
+     * Parsian constructor.
      * Construct the class with the relevant settings.
      *
-     * @param Invoice $invoice
      * @param $settings
      */
     public function __construct(Invoice $invoice, $settings)
     {
         $this->invoice($invoice);
-        $this->settings = (object)$settings;
-        $this->client = new Client();
+        $this->settings = (object) $settings;
     }
 
     /**
@@ -62,79 +45,49 @@ class Gardeshgari extends Driver
      * @return string
      *
      * @throws PurchaseFailedException
-     * @throws \GuzzleHttp\Exception\GuzzleException
+     * @throws \SoapFault
      */
     public function purchase()
     {
-        try {
-            // Prepare request data
-            $data = [
-                'amount' => $this->invoice->getAmount() / ($this->settings->currency == 'T' ? 1 : 10),
-                'invoiceNumber' => $this->getInvoiceNumber(),
-                'invoiceDate' => date('Y-m-d'),
-                'callback' => $this->getCallbackUrl(),
-                'token' => $this->settings->apiToken,
-            ];
+        $soap = new \SoapClient($this->settings->apiPurchaseUrl);
+        $response = $soap->SalePaymentRequest(
+            ['requestData' => $this->preparePurchaseData()]
+        );
 
-            // Add optional parameters if provided
-            $data['mobile'] = $this->invoice->getDetail('phone')
-                ?? $this->invoice->getDetail('cellphone')
-                ?? $this->invoice->getDetail('mobile');
-
-            $data['email'] = $this->invoice->getDetail('email');
-
-
-            // Make the API request
-            $response = $this->client->request(
-                'POST',
-                $this->settings->apiPurchaseUrl,
-                [
-                    'json' => $data,
-                    'headers' => [
-                        'Content-Type' => 'application/json',
-                        'Accept' => 'application/json'
-                    ]
-                ]
-            );
-
-            // Process the response
-            $result = json_decode($response->getBody()->getContents(), true);
-
-            // Check if request was successful
-            if (isset($result['success']) && $result['success'] === true) {
-                $this->redirectUrl = $result['data']['url'];
-                $this->invoice->transactionId($result['data']['token']);
-
-                return $this->invoice->getTransactionId();
-            } else {
-                throw new \Exception('Error getting token: ' . ($result['message'] ?? 'Unknown error'));
-            }
-        } catch (RequestException $e) {
-            if ($e->hasResponse()) {
-                $errorBody = json_decode($e->getResponse()->getBody()->getContents(), true);
-                $code = (int)$errorBody['code'] ?? 0;
-
-                throw new PurchaseFailedException($errorBody['message'] ?? $e->getMessage(), $code);
-            } else {
-                throw new \Exception('Connection Error: ' . $e->getMessage());
-            }
-        } catch (\Exception $e) {
-            throw new \Exception('Error: ' . $e->getMessage());
+        // no response from bank
+        if (empty($response->SalePaymentRequestResult)) {
+            throw new PurchaseFailedException('bank gateway not response');
         }
+
+        $result = $response->SalePaymentRequestResult;
+
+        if (isset($result->Status) && $result->Status == 0 && !empty($result->Token)) {
+            $this->invoice->transactionId($result->Token);
+        } else {
+            // an error has happened
+            throw new PurchaseFailedException($result->Message);
+        }
+
+        // return the transaction's id
+        return $this->invoice->getTransactionId();
     }
 
     /**
      * Pay the Invoice
      */
-    public function pay(): RedirectionForm
+    public function pay() : RedirectionForm
     {
-
-        $payUrl = implode('/', [
-            $this->redirectUrl,
+        $payUrl = sprintf(
+            '%s?Token=%s',
+            $this->settings->apiPaymentUrl,
             $this->invoice->getTransactionId()
-        ]);
+        );
 
-        return $this->redirectWithForm($payUrl, [], 'GET');
+        return $this->redirectWithForm(
+            $payUrl,
+            ['Token' => $this->invoice->getTransactionId()],
+            'GET'
+        );
     }
 
     /**
@@ -142,105 +95,82 @@ class Gardeshgari extends Driver
      *
      *
      * @throws InvalidPaymentException
-     * @throws \GuzzleHttp\Exception\GuzzleException|PreviouslyVerifiedException
+     * @throws \SoapFault
      */
-    public function verify(): ReceiptInterface
+    public function verify() : ReceiptInterface
     {
-        $trackingNumber = Request::input('trackingNumber');
+        $status = Request::input('status');
+        $token = Request::input('Token') ?? $this->invoice->getTransactionId();
 
-        $data = [
-            'trackingNumber' => $trackingNumber,
-            'token' => $this->settings->apiToken,
-        ];
-
-        // Make the API request
-        $response = $this->client->request(
-            'POST',
-            $this->settings->apiVerificationUrl,
-            [
-                'json' => $data,
-                'headers' => [
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ]
-            ]
-        );
-
-        $body = json_decode($response->getBody()->getContents(), true);
-
-        $success = (bool)$body['success'] ?? false;
-
-        if (!$success) {
-            $code = 0;
-            $message = $body['message'] ?? 'خطای نامشخص در تایید پرداخت';
-            throw new InvalidPaymentException($message, $code);
+        if (empty($token)) {
+            throw new InvalidPaymentException('تراکنش توسط کاربر کنسل شده است.', (int)$status);
         }
 
-        $refNumber = $body['data']['refNumber'] ?? '';
-        $verifiedBefore = $body['data']['verifiedBefore'] ?? false;
+        $data = $this->prepareVerificationData();
 
-        if ($verifiedBefore) {
-            throw new PreviouslyVerifiedException('این پرداخت قبلا تایید شده است.', 0);
+        $soap = new \SoapClient($this->settings->apiVerificationUrl);
+
+        $response = $soap->ConfirmPayment(['requestData' => $data]);
+        if (empty($response->ConfirmPaymentResult)) {
+            throw new InvalidPaymentException('از سمت بانک پاسخی دریافت نشد.');
+        }
+        $result = $response->ConfirmPaymentResult;
+
+        $hasWrongStatus = (!isset($result->Status) || $result->Status != 0);
+        $hasWrongRRN = (!isset($result->RRN) || $result->RRN <= 0);
+        if ($hasWrongStatus || $hasWrongRRN) {
+            $message = 'خطا از سمت بانک با کد '.$result->Status.' رخ داده است.';
+            throw new InvalidPaymentException($message, (int)$result->Status);
         }
 
-        $receipt = $this->createReceipt($refNumber);
-        $receipt->detail([
-            // default params
-            'traceNo' => $body['data']['refNumber'] ?? '',
-            'referenceNo' => $body['data']['refNumber'],
-            'transactionId' => $body['data']['invoiceNumber'],
-            'cardNo' => $body['data']['cardNumber'] ?? '',
-            // additional params
-            'cardNumber' => $body['data']['cardNumber'] ?? '',
-            'transactionMessage' => $body['data']['message'] ?? '',
-            'message' => $body['message'] ?? '',
-            'invoiceNumber' => $body['data']['invoiceNumber'] ?? '',
-            'invoiceDate' => $body['data']['invoiceDate'] ?? '',
-            'amount' => $body['data']['amount'] ?? 0,
-        ]);
-
-
-        return $receipt;
-    }
-
-    /**
-     * Get invoiceNumber from invoice bag or generate a new one
-     *
-     * Gardeshgari gateway does not support invoiceNumber with more
-     * Than 24 characters long. We have to trim it before using.
-     *
-     * @return string
-     */
-    protected function getInvoiceNumber(): string
-    {
-        if ($invoiceNumber = $this->invoice->getDetail('invoiceNumber')) {
-            return substr($invoiceNumber, 0, 24);
-        }
-        $uuid = $this->invoice->getUuid();
-        return substr(str_replace('-', '', $uuid), 0, 24);
-    }
-
-    /**
-     * Get callbackUrl from invoice bag or settings
-     *
-     * @return string
-     */
-    protected function getCallbackUrl(): string
-    {
-        if ($callbackUrl = $this->invoice->getDetail('callbackUrl')) {
-            return $callbackUrl;
-        }
-        return $this->settings->callbackUrl;
+        return $this->createReceipt($result->RRN);
     }
 
     /**
      * Generate the payment's receipt
      *
      * @param $referenceId
-     * @return Receipt
      */
     protected function createReceipt($referenceId): \Shetabit\Multipay\Receipt
     {
-        return new Receipt('gardeshgari', $referenceId);
+        return new Receipt('parsian', $referenceId);
+    }
+
+    /**
+     * Prepare data for payment verification
+     */
+    protected function prepareVerificationData(): array
+    {
+        $transactionId = Request::input('Token') ?? $this->invoice->getTransactionId();
+
+        return [
+            'LoginAccount' => $this->settings->merchantId,
+            'Token'        => $transactionId,
+        ];
+    }
+
+    /**
+     * Prepare data for purchasing invoice
+     */
+    protected function preparePurchaseData(): array
+    {
+        // The bank suggests that an English description is better
+        if (empty($description = $this->invoice->getDetail('description'))) {
+            $description = $this->settings->description;
+        }
+
+        $phone = $this->invoice->getDetail('phone')
+            ?? $this->invoice->getDetail('cellphone')
+            ?? $this->invoice->getDetail('mobile');
+
+
+        return [
+            'LoginAccount'   => $this->settings->merchantId,
+            'Amount'         => $this->invoice->getAmount() * ($this->settings->currency == 'T' ? 10 : 1),
+            'OrderId'        => crc32($this->invoice->getUuid()),
+            'CallBackUrl'    => $this->settings->callbackUrl,
+            'Originator'     => $phone,
+            'AdditionalData' => $description,
+        ];
     }
 }
