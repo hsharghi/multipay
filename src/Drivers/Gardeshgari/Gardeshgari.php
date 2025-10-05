@@ -108,7 +108,7 @@ class Gardeshgari extends Driver
 
         $data = $this->prepareVerificationData();
         $soap = new \SoapClient($this->settings->apiVerificationUrl);
-
+info('verification data', $data);
         $response = $soap->ConfirmPayment(['requestData' => $data]);
         if (empty($response->ConfirmPaymentResult)) {
             throw new InvalidPaymentException('از سمت بانک پاسخی دریافت نشد.');
@@ -140,7 +140,7 @@ class Gardeshgari extends Driver
      */
     protected function prepareVerificationData(): array
     {
-        $transactionId = $this->invoice->getTransactionId() ?? Request::input('Token');
+        $transactionId = Request::input('Token') ?? $this->invoice->getTransactionId();
 
         return [
             'LoginAccount' => $this->settings->merchantId,
