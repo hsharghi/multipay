@@ -108,13 +108,11 @@ class Gardeshgari extends Driver
 
         $data = $this->prepareVerificationData();
         $soap = new \SoapClient($this->settings->apiVerificationUrl);
-info('verification data', $data);
         $response = $soap->ConfirmPayment(['requestData' => $data]);
         if (empty($response->ConfirmPaymentResult)) {
             throw new InvalidPaymentException('از سمت بانک پاسخی دریافت نشد.');
         }
         $result = $response->ConfirmPaymentResult;
-
         $hasWrongStatus = (!isset($result->Status) || $result->Status != 0);
         $hasWrongRRN = (!isset($result->RRN) || $result->RRN <= 0);
         if ($hasWrongStatus || $hasWrongRRN) {
@@ -122,7 +120,15 @@ info('verification data', $data);
             throw new InvalidPaymentException($message, (int)$result->Status);
         }
 
-        return $this->createReceipt($result->RRN);
+        $receipt = $this->createReceipt($result->RRN);
+        $receipt->detail([
+            'traceNo' => $result->Token,
+            'referenceNo' => $result->RRN,
+            'transactionId' => $this->invoice->getTransactionId(),
+            'cardNo' => $result->CardNumberMasked,
+        ]);
+
+        return $receipt;
     }
 
     /**
@@ -132,7 +138,7 @@ info('verification data', $data);
      */
     protected function createReceipt($referenceId): \Shetabit\Multipay\Receipt
     {
-        return new Receipt('parsian', $referenceId);
+        return new Receipt('gardeshgari', $referenceId);
     }
 
     /**
