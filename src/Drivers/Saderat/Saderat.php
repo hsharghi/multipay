@@ -174,10 +174,10 @@ class Saderat extends Driver
             'TerminalNumber' => $transactionDetail['TerminalNumber'],
             'OrginalAmount' => $transactionDetail['OrginalAmount'],
             'AffectiveAmount' => $transactionDetail['AffectiveAmount'],
-            'StraceDate' => $transactionDetail['StraceDate'],              
-            // SEP documents are not up-to-date. This will fix different 
+            'StraceDate' => $transactionDetail['StraceDate'],
+            // SEP documents are not up-to-date. This will fix different
             // between variable name in docs and actual returned values.
-            'Amount' => $transactionDetail['OrginalAmount'],                         
+            'Amount' => $transactionDetail['OrginalAmount'],
         ]);
 
         return $receipt;
@@ -192,7 +192,7 @@ class Saderat extends Driver
      */
     protected function createReceipt($referenceId)
     {
-        $receipt = new Receipt('saman', $referenceId);
+        $receipt = new Receipt('saderat', $referenceId);
 
         return $receipt;
     }
